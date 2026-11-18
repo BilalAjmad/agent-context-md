@@ -2,7 +2,8 @@
 
 ## 0.1.0 — 2026-11-18
 
-First release.
+First release. npm package name: **agent-context-md** (the `context-md` CLI
+command is unchanged; `npx agent-context-md install` works out of the box).
 
 ### Added
 - `context-md install [dir]`: wires a repository — creates `context.md`, injects the

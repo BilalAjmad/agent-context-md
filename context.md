@@ -53,14 +53,10 @@ Zero-dependency Node CLI (`context-md`) that wires **any repository** to live `c
 
 ## Current Focus / Next Steps
 
-- Feature-complete for v0.1.0 (27/27 tests, ALL-WORLD instruction-file coverage:
-  AGENTS.md + CLAUDE.md + GEMINI.md + copilot-instructions + Kiro + Cursor +
-  Devin/Windsurf + Continue + Junie + Amazon Q + Cline/legacy + Roo + Kilo +
-  Augment + Tabnine + Zed .rules + Aider CONVENTIONS.md). Hook enforcement for
-  Claude/Codex/Gemini/Cursor; opencode plugin (no verified turn-end gate).
-- Machine scan (read-only): 131 top-level git repos; 5 wired. Global default
-  available but NOT activated (maintainer's call): `context-md install --global`.
-- Waiting on maintainer: GitHub remote + push, optional `npm publish`.
+- Publish-ready v0.1.0 as npm package **agent-context-md** (unique name; the `context-md` CLI command is unchanged).
+- Repo moved to `C:\Users\AFZAAL KHAN\agent-context-md`; GitHub remote pending maintainer auth (token invalid: `gh auth login` needed).
+- 27/27 tests; `context-md doctor` 11/11; CI workflow; SECURITY.md threat model.
+- Waiting on maintainer: `gh auth login`, then `gh repo create BilalAjmad/agent-context-md --public --source=. --remote=origin --push`.
 
 ## Change Log
 

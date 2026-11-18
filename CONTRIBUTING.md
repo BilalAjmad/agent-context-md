@@ -4,7 +4,7 @@
 
 ```bash
 git clone <this repo>
-cd context-md
+cd agent-context-md
 npm test          # node --test — no install step needed, zero dependencies
 ```
 

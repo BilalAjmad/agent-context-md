@@ -1,7 +1,7 @@
 {
-  "name": "context-md",
+  "name": "agent-context-md",
   "version": "0.1.0",
-  "description": "Live context.md for every AI agent — one file, kept real-time by hooks, zero context loss",
+  "description": "Live context.md for every AI agent.",
   "type": "module",
   "bin": {
     "context-md": "bin/context-md.js"

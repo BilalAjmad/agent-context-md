@@ -13,7 +13,7 @@ CI (.github/workflows/test.yml) runs the same tests on Node 18/20/22 on every pu
 ## 2. Push to GitHub
 
 ```bash
-git remote add origin https://github.com/<YOUR_USER>/context-md.git
+git remote add origin https://github.com/BilalAjmad/agent-context-md.git
 git push -u origin main
 ```
 
@@ -26,12 +26,12 @@ npx github:<YOUR_USER>/context-md install
 npx github:<YOUR_USER>/context-md install --global   # machine-wide default
 ```
 
-## 3b. npm publish (optional, cleanest `npx context-md` UX)
+## 3b. npm publish (optional, cleanest `npx agent-context-md` UX)
 
 ```bash
 npm login
 npm publish               # MIT, public, files: bin + src
-npx context-md install    # anywhere, works after publish
+npx agent-context-md install    # anywhere, works after publish
 ```
 
 ## 4. Verify live (once agents have credits)
