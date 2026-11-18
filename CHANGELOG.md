@@ -27,6 +27,15 @@ First release.
 - **`context-md doctor`**: verifies context.md markers, hook files and agent
   configs; exits non-zero on any problem.
 - **PUBLISHING.md**: maintainer release + live-verification playbook.
+- **Security hardening** (review-driven): symlink-safe, atomic writes everywhere
+  (tmp + rename); corrupt agent configs are skipped, never overwritten; unexpected
+  `hooks` shapes are left untouched; `git status -z` quote-safe freshness check;
+  persistent per-session stop-gate block counter (max 2 then let the turn end);
+  read gate clears only on an actual read of the file (read-ish tool or shell
+  read verb), never on `echo context.md`; uninstall never deletes
+  `~/.opencode/plugins/context-md.js`; git-ignored `*.bak-*` patterns for every
+  config the tool backs up; `--home=`/`--home <dir>` both supported with
+  directory validation.
 - **First-run backfill**: repos wired for the first time get a one-time deep
   backfill — the agent must read README/manifests/key sources and rewrite
   `context.md` Purpose + Key Knowledge with real facts (`.context/.backfill-done`

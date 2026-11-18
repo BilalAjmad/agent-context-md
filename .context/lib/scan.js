@@ -1,14 +1,14 @@
 // Shared repo scanning + detection logic.
 // Environment-agnostic ESM: imported by the CLI and by the hooks installed
 // into target repos (via .context/lib/). No dependencies, no network.
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.output',
   '.svelte-kit', 'target', 'vendor', 'coverage', '__pycache__', '.venv', 'venv',
-  '.cache', '.idea', '.turbo', 'bin', 'obj', 'DerivedData', 'Pods',
+  '.cache', '.idea', '.turbo', 'obj', 'DerivedData', 'Pods',
 ]);
 
 export function findRoot(startDir = process.cwd()) {
@@ -40,6 +40,7 @@ export function walkRepo(root, { maxDepth = 2, cap = 400 } = {}) {
       if (item.name.startsWith('.') && item.name !== '.github') continue;
       if (item.isDirectory()) {
         if (SKIP_DIRS.has(item.name)) continue;
+        if (entries.length >= cap + 500) continue; // stop pushing more dirs once file cap is near
         entries.push({ type: 'dir', name: item.name, rel: path.relative(root, path.join(dir, item.name)) || '.', depth });
         if (depth < maxDepth) stack.push({ dir: path.join(dir, item.name), depth: depth + 1 });
       } else {
@@ -91,7 +92,7 @@ export function detectStack(root) {
   let framework = null;
   const pkgPath = path.join(root, 'package.json');
   let pkg = null;
-  try { pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')); } catch { /* not node or unreadable */ }
+  try { pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8').replace(/^\uFEFF/, '')); } catch { /* not node or unreadable */ }
   if (pkg) {
     const deps = Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) });
     const hit = DEP_HINTS.find(([name]) => deps.includes(name));
@@ -113,19 +114,19 @@ export function detectStack(root) {
   };
 }
 
-function git(root, args) {
+function git(root, ...args) {
   try {
-    return execSync(`git ${args}`, { cwd: root, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch {
     return null;
   }
 }
 
 export function gitInfo(root) {
-  const branch = git(root, 'rev-parse --abbrev-ref HEAD');
+  const branch = git(root, 'rev-parse', '--abbrev-ref', 'HEAD');
   if (branch === null) return null; // not a git repo
-  const head = git(root, 'rev-parse --short HEAD') || '(no commits yet)';
-  const porcelain = git(root, 'status --porcelain') || '';
+  const head = git(root, 'rev-parse', '--short', 'HEAD') || '(no commits yet)';
+  const porcelain = git(root, 'status', '--porcelain') || '';
   const dirty = porcelain ? porcelain.split('\n').filter(Boolean).length : 0;
   return { branch, head, dirty };
 }
@@ -138,6 +139,7 @@ export function countFiles(root) {
     let items;
     try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
     for (const item of items) {
+      if (count > 10000) break;
       if (item.name.startsWith('.') && item.name !== '.github') continue;
       if (item.isDirectory()) {
         if (!SKIP_DIRS.has(item.name)) stack.push(path.join(dir, item.name));

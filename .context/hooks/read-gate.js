@@ -23,32 +23,41 @@ try { lib = await import(pathToFileURL(RUNTIME_LIB).href); } catch { process.std
 
 const root = (() => { try { return lib.findRoot(process.cwd()) || path.resolve(__dirname, '..', '..'); } catch { return path.resolve(__dirname, '..', '..'); } })();
 
-// Global runtime defers to a repo's local runtime when present.
-if (HOOK_IS_GLOBAL && fs.existsSync(path.join(root, '.context', 'lib', 'context-file.js'))) {
+// Global runtime defers to a repo's local runtime when present, and activates
+// only in project-like folders (.git or a known manifest).
+const MANIFESTS = ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'Gemfile', 'composer.json', 'requirements.txt', 'setup.py', 'Dockerfile', '.git'];
+const projectLike = MANIFESTS.some((m) => fs.existsSync(path.join(root, m)));
+if (HOOK_IS_GLOBAL && (fs.existsSync(path.join(root, '.context', 'lib', 'context-file.js')) || !projectLike)) {
   process.stdout.write('{}');
   process.exit(0);
 }
 
-// context.md is auto-created on the first tool call even if session-start was skipped.
+// context.md is auto-created on the first tool call — but NEVER overwrite an
+// existing (possibly hand-edited) file, even if it is broken.
 const contextFile = path.join(root, 'context.md');
 if (!fs.existsSync(contextFile)) {
-  try { lib.ensureContextFile(root); } catch { try { fs.writeFileSync(contextFile, '# context.md', 'utf8'); } catch {} }
+  try { lib.ensureContextFile(root); } catch { /* best effort */ }
 }
 
 const toolName = String(input.tool_name ?? input.tool ?? input.name ?? '');
 const toolInput = input.tool_input ?? input.arguments ?? input.toolInput ?? input;
-const serialized = JSON.stringify(toolInput ?? input ?? {});
-
-const READ_TOOLS = /read|grep|glob|ls|search|find|cat|head|tail|bash|shell|exec/i;
+const isReadTool = /read|grep|glob|search|find/i.test(toolName);
+const isShell = /bash|shell|exec|run_shell|command/i.test(toolName);
 const EDIT_TOOLS = /edit|write|multiedit|notebookedit|apply_patch|replace|str_replace|patch|create_file|update|delete/i;
-const mentionsContext = serialized.includes('context.md');
+const cmdText = (() => { try { const t = toolInput ?? {}; const c = t.command ?? t.cmd ?? t.script ?? t.patch ?? t.input; return typeof c === 'string' ? c.slice(0, 4000) : ''; } catch { return ''; } })();
+const READ_VERBS = /(^|[\s;|&(])(cat|type|head|tail|less|more|grep|find|search|sed|Get-Content)\b/i;
+const changedRead = lib.extractChangedFile(toolInput ?? input ?? {});
+const toolCtxMatch = Boolean(changedRead) && (changedRead === 'context.md' || /(^|[\/])context\.md$/i.test(changedRead));
+const cmdCtxMatch = isShell && cmdText.includes('context.md');
+const readsRealCtx = toolCtxMatch || (cmdCtxMatch && READ_VERBS.test(cmdText));
 
 const statePath = path.join(root, '.context', 'session-state.json');
-let state = { edits: 0, pendingEdit: false, backfillPending: false, contextRead: false };
-try { state = { ...state, ...JSON.parse(fs.readFileSync(statePath, 'utf8')) }; } catch {}
+let state = { edits: 0, pendingEdit: false, backfillPending: false, contextRead: false, stopCount: 0 };
+try { let raw8 = fs.readFileSync(statePath, 'utf8'); if (raw8.charCodeAt(0) === 0xFEFF) raw8 = raw8.slice(1); state = { ...state, ...JSON.parse(raw8) }; } catch {}
 
-// A read of context.md by ANY tool clears the gate for the session.
-if (mentionsContext && READ_TOOLS.test(toolName)) {
+// Clearing the gate needs a real read of context.md: a read-ish tool touching
+// the real file, or a shell command with an actual read verb on it.
+if (readsRealCtx && (isReadTool || (isShell && READ_VERBS.test(cmdText)))) {
   state.contextRead = true;
   try { fs.mkdirSync(path.join(root, '.context'), { recursive: true }); fs.writeFileSync(statePath, JSON.stringify(state), 'utf8'); } catch {}
   process.stdout.write('{}');

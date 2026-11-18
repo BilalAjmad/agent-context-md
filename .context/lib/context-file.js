@@ -7,10 +7,34 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildSnapshot, buildStructure, findRoot } from './scan.js';
 
-export const MARKERS = {
-  start: '<!-- context-md:start -->',
-  end: '<!-- context-md:end -->',
-};
+// ---------- write safety (symlinks + atomicity) ----------
+
+export function assertNotSymlink(file) {
+  let stat;
+  try {
+    stat = fs.lstatSync(file);
+  } catch {
+    return; // does not exist yet — fine to create
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`refusing to write through symlink: ${file}`);
+  }
+}
+
+// Atomic write: refuse symlinks, write tmp sibling, rename over the target.
+export function atomicWriteFile(file, content) {
+  assertNotSymlink(file);
+  const dir = path.dirname(file);
+  const tmp = path.join(dir, `.${path.basename(file)}.tmp-${process.pid}-${Date.now()}`);
+  fs.writeFileSync(tmp, content, 'utf8');
+  try {
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    try { fs.rmSync(tmp, { force: true }); } catch {}
+    throw err;
+  }
+}
+
 const SNAP_START = '<!-- context-md:snapshot:start -->';
 const SNAP_END = '<!-- context-md:snapshot:end -->';
 const STRUCT_START = '<!-- context-md:structure:start -->';
@@ -34,7 +58,7 @@ function replaceBetween(content, startMarker, endMarker, body) {
 function getBetween(content, startMarker, endMarker) {
   const s = content.indexOf(startMarker);
   const e = content.indexOf(endMarker);
-  if (s === -1 || e === -1) return null;
+  if (s === -1 || e === -1 || e < s) return null;
   return content.slice(s + startMarker.length, e).trim();
 }
 
@@ -85,7 +109,7 @@ ${LOG_END}
 export function ensureContextFile(root, { refresh = true } = {}) {
   const file = contextPath(root);
   if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, initialTemplate(root), 'utf8');
+    atomicWriteFile(file, initialTemplate(root));
     return { created: true, file };
   }
   if (refresh) refreshDeterministic(root);
@@ -98,7 +122,7 @@ export function refreshDeterministic(root) {
   let content = fs.readFileSync(file, 'utf8');
   content = replaceBetween(content, SNAP_START, SNAP_END, buildSnapshot(root));
   content = replaceBetween(content, STRUCT_START, STRUCT_END, buildStructure(root));
-  fs.writeFileSync(file, content, 'utf8');
+  atomicWriteFile(file, content);
   return { file };
 }
 
@@ -113,15 +137,8 @@ export function appendChangeLog(root, entry, { cap = 100 } = {}) {
   lines.push(line);
   const trimmed = lines.slice(-cap).join('\n');
   content = replaceBetween(content, LOG_START, LOG_END, trimmed);
-  fs.writeFileSync(file, content, 'utf8');
+  atomicWriteFile(file, content);
   return line;
-}
-
-export function readContextSummary(root, { maxChars = 4000 } = {}) {
-  const file = contextPath(root);
-  if (!fs.existsSync(file)) return null;
-  const content = fs.readFileSync(file, 'utf8');
-  return content.length > maxChars ? content.slice(0, maxChars) + '\n… (truncated — read the file itself)' : content;
 }
 
 // Re-export for hook convenience.
@@ -135,7 +152,12 @@ export function extractChangedFile(toolInput) {
     if (seen.has(value)) return null;
     seen.add(value);
     for (const [key, v] of Object.entries(value)) {
-      if (typeof v === 'string' && /^(file_path|filePath|path|filename|target_file|file)$/i.test(key)) {
+      if (typeof v === 'string' && /^(file_path|filePath|target_file)$/i.test(key)) {
+        if (v.length > 1 && v.length < 300 && !v.includes('\n')) return v;
+      }
+    }
+    for (const [key, v] of Object.entries(value)) {
+      if (typeof v === 'string' && /^(path|filename|file)$/i.test(key)) {
         if (v.length > 1 && v.length < 300 && !v.includes('\n')) return v;
       }
     }

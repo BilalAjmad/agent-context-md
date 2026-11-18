@@ -8,10 +8,10 @@
 ## Snapshot
 
 <!-- context-md:snapshot:start -->
-- Updated: 2026-11-18T13:43:06.381Z
-- Git: main @ bb4fdb0 · 3 uncommitted change(s)
+- Updated: 2026-11-18T14:37:23.192Z
+- Git: main @ 27a895b · 28 uncommitted change(s)
 - Stack: Node.js
-- Files (excl. deps/build): 16 · dependencies: 0
+- Files (excl. deps/build): 20 · dependencies: 0
 - Scripts: test=`node --test`
 <!-- context-md:snapshot:end -->
 
@@ -19,6 +19,7 @@
 
 <!-- context-md:structure:start -->
 .github/  (2 files)
+bin/  (1 files)
 src/  (4 files)
 test/  (1 files)
 AGENTS.md
@@ -26,10 +27,13 @@ CHANGELOG.md
 CLAUDE.md
 context.md
 CONTRIBUTING.md
+debug-gate.mjs
 GEMINI.md
 LICENSE
 package.json
+PUBLISHING.md
 README.md
+SECURITY.md
 <!-- context-md:structure:end -->
 
 ## Purpose
@@ -49,12 +53,11 @@ Zero-dependency Node CLI (`context-md`) that wires **any repository** to live `c
 
 ## Current Focus / Next Steps
 
-- Publish-ready v0.1.0 (23/23 tests, `context-md doctor`, PUBLISHING.md, CI workflow, `npm pack` 8 files / ~22 kB verified).
-- Live-agent verification blocked: maintainer's model account returned API 402 (insufficient credits) — hooks verified at the stdin/stdout contract level; re-run the PUBLISHING.md live check once credits exist.
-- Waiting on maintainer: GitHub remote + `npm publish` (or GitHub-only via `npx github:<user>/context-md`).
-- Optional machine-wide activation: `context-md install --global`.
-- Known gaps (documented): opencode has no verified turn-end hook (no stop gate there); Windsurf/Cline stop gates untested.
-- Roadmap: `context-md lint` (content quality), Cline SDK plugin for stop gate.
+- Publish-ready v0.1.0 (24/24 tests, 5 strict review passes + fresh-eyes subagent reviews, `context-md doctor`, SECURITY.md threat model, PUBLISHING.md, CI workflow).
+- Security review hardened: symlink-safe atomic writes, corrupt-config skip (never overwrite), nested hook-shape guard, git -z freshness, persistent stop-gate cap (2 blocks/session), real-read-only read gate, global opencode plugin kept on uninstall, BOM-tolerant state parse.
+- Laptop scan (read-only): 131 top-level git repos, only 5 wired with context.md — bulk wiring requires the maintainer's go-ahead per repo or a one-time `install --global`.
+- Live-agent verification blocked at the model layer (API 402 insufficient credits) — hooks verified at the stdin/stdout contract level; re-run PUBLISHING.md §4 once credits exist.
+- Waiting on maintainer: GitHub remote + push, optional `npm publish`, optional `context-md install --global`.
 
 ## Change Log
 

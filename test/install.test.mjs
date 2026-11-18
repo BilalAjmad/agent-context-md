@@ -65,6 +65,7 @@ test('install adds .context session files to .gitignore but keeps .context commi
   const gitignore = fs.readFileSync(path.join(fixture, '.gitignore'), 'utf8');
   assert.match(gitignore, /\.context\/session-state\.json/);
   assert.match(gitignore, /\.context\/\.last-scan/);
+  assert.match(gitignore, /\.claude\/settings\.json\.bak-\*/);
   assert.ok(!gitignore.split('\n').some((l) => l.trim() === '.context/'), '.context/ itself must not be ignored');
   // idempotent: second install does not duplicate
   run(['install', fixture]);
@@ -87,7 +88,7 @@ test('post-tool hook appends to Change Log', () => {
   const hook = path.join(fixture, '.context', 'hooks', 'post-tool.js');
   execFileSync(process.execPath, [hook], { cwd: fixture, input: JSON.stringify({ tool_input: { file_path: 'src/index.js' } }), stdio: ['pipe', 'pipe', 'pipe'] });
   const ctx = fs.readFileSync(path.join(fixture, 'context.md'), 'utf8');
-  assert.match(ctx, /edited src[\\/]index\.js/);
+  assert.match(ctx, /edited[^\n]*src[\\/]index\.js/);
 });
 
 test('session-start hook emits agent-compatible JSON and refreshes', () => {
@@ -138,6 +139,8 @@ test('stop gate blocks turn-end after edits without context.md update', () => {
 test('stop gate passes after an agent edit of context.md', () => {
   const postTool = path.join(fixture, '.context', 'hooks', 'post-tool.js');
   const stopCheck = path.join(fixture, '.context', 'hooks', 'stop-check.js');
+  // Backfill marker must exist, else the strict backfill gate (correctly) keeps blocking
+  fs.writeFileSync(path.join(fixture, '.context', '.backfill-done'), '');
   // Agent updates context.md → pendingEdit cleared
   execFileSync(process.execPath, [postTool], { cwd: fixture, input: JSON.stringify({ tool_input: { file_path: 'context.md' } }), stdio: ['pipe', 'pipe', 'pipe'] });
   const state = JSON.parse(fs.readFileSync(path.join(fixture, '.context', 'session-state.json'), 'utf8'));
@@ -172,6 +175,9 @@ test('global install wires a fake HOME and auto-onboards a fresh project', () =>
     assert.ok(fs.existsSync(path.join(home, '.context-md', 'hooks', 'session-start.js')), 'global runtime installed');
     const settings = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'));
     assert.ok(JSON.stringify(settings).includes('.context-md/hooks/'), 'global claude hooks wired');
+    const codex = JSON.parse(fs.readFileSync(path.join(home, '.codex', 'hooks.json'), 'utf8'));
+    assert.ok(JSON.stringify(codex).includes('.context-md/hooks/'), 'global codex hooks wired');
+    assert.ok(fs.existsSync(path.join(home, '.config', 'opencode', 'plugins', 'context-md.js')), 'global opencode plugin wired');
 
     // Simulate a SessionStart in the fresh project: context.md must auto-create
     const start = path.join(home, '.context-md', 'hooks', 'session-start.js');
@@ -186,7 +192,11 @@ test('global install wires a fake HOME and auto-onboards a fresh project', () =>
     const blocked = execFileSync(process.execPath, [stop, '--agent=claude'], { cwd: proj, input: '{}', encoding: 'utf8' });
     assert.equal(JSON.parse(blocked).decision, 'block');
 
-    // Agent does the backfill: edits context.md → gate passes
+    // Agent does the backfill: edits context.md and clears the marker
+    execFileSync(process.execPath, [post], { cwd: proj, input: JSON.stringify({ tool_input: { file_path: 'context.md' } }), stdio: ['pipe', 'pipe', 'pipe'] });
+    assert.equal(JSON.parse(execFileSync(process.execPath, [stop, '--agent=claude'], { cwd: proj, input: '{}', encoding: 'utf8' })).decision, 'block', 'stop gate still blocks until .backfill-done exists');
+    fs.writeFileSync(path.join(proj, '.context', '.backfill-done'), '');
+    // A final context.md edit (after the marker) clears pendingDelete state
     execFileSync(process.execPath, [post], { cwd: proj, input: JSON.stringify({ tool_input: { file_path: 'context.md' } }), stdio: ['pipe', 'pipe', 'pipe'] });
     const after = execFileSync(process.execPath, [stop, '--agent=claude'], { cwd: proj, input: '{}', encoding: 'utf8' });
     assert.equal(after.trim(), '{}');
@@ -223,6 +233,7 @@ test('global uninstall removes machine-wide wiring', () => {
     const settings = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'));
     assert.ok(!JSON.stringify(settings).includes('.context-md/hooks/'), 'global hooks removed');
     assert.ok(!fs.existsSync(path.join(home, '.context-md')), 'runtime removed');
+    assert.ok(!fs.existsSync(path.join(home, '.config', 'opencode', 'plugins', 'context-md.js')), 'global opencode plugin removed');
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -308,6 +319,14 @@ test('read gate recreates a missing context.md before any work', () => {
   const out = execFileSync(process.execPath, [readGate, '--agent=claude'], { cwd: fixture, input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'src/index.js' } }), encoding: 'utf8' });
   assert.equal(JSON.parse(out).hookSpecificOutput.permissionDecision, 'deny');
   assert.ok(fs.existsSync(ctxFile), 'context.md must be recreated automatically');
+});
+
+test('session-start self-heals a corrupted context.md', () => {
+  const start = path.join(fixture, '.context', 'hooks', 'session-start.js');
+  fs.writeFileSync(path.join(fixture, 'context.md'), 'total garbage, no markers at all');
+  execFileSync(process.execPath, [start], { cwd: fixture, input: '{}', stdio: ['pipe', 'pipe', 'pipe'] });
+  const ctx = fs.readFileSync(path.join(fixture, 'context.md'), 'utf8');
+  assert.ok(ctx.includes('context-md:snapshot:start'), 'self-heal must recreate marker sections');
 });
 
 test('uninstall removes blocks and hooks but keeps context.md', () => {

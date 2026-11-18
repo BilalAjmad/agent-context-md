@@ -29,10 +29,14 @@ Usage:
 
 After install, every supported AI agent will read context.md before work and
 hooks keep its change log real-time. Commit context.md to share it with your team.
-Repos wired before backfill existed get ONE backfill pass on their next session.`);
+Repos wired before backfill existed get ONE backfill pass on their next session.
+Config backups (*.bak-<timestamp>) are left next to your agent configs — delete
+them when you are happy with the result.`);
 }
 
 function flagValue(args, name) {
+  const direct = args.find((a) => a.startsWith(name + '='));
+  if (direct) return direct.slice(name.length + 1);
   const i = args.indexOf(name);
   return i !== -1 && args[i + 1] ? args[i + 1] : null;
 }
@@ -49,12 +53,30 @@ function resolveTarget(args) {
     console.error(`error: directory not found: ${dir}`);
     process.exit(2);
   }
+  if (!fs.statSync(dir).isDirectory()) {
+    console.error(`error: not a directory: ${dir}`);
+    process.exit(2);
+  }
   return dir;
 }
 
 function globalHome(args) {
   const home = flagValue(args, '--home');
-  return home ? path.resolve(home) : undefined;
+  if (!home) return undefined;
+  if (/["`$]/.test(home)) {
+    console.error('error: --home may not contain quotes, $ or backticks');
+    process.exit(2);
+  }
+  const resolved = path.resolve(home);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    console.error(`error: --home is not a directory: ${home}`);
+    process.exit(2);
+  }
+  return resolved;
+}
+
+function safe(fn) {
+  try { fn(); } catch (err) { console.error(`error: ${err?.message || err}`); process.exit(1); }
 }
 
 function printReport(report) {
@@ -81,14 +103,16 @@ function printGlobalReport(report) {
     console.log(`runtime          ${path.join(report.home, '.context-md')} (lib + hooks + opencode plugin)`);
     console.log(`instruction files:`);
     for (const item of report.instructionFiles) {
-      console.log(`  ${item.action.padEnd(9)} ${path.join(report.home, item.file ?? '')}`);
+      console.log(`  ${item.action.padEnd(9)} ${item.file}`);
     }
     console.log(`agent hooks (global):`);
     for (const item of report.hooks) {
       console.log(`  ${item.error ? `FAILED: ${item.error}` : 'wired'}   ${item.agent}`);
     }
     console.log(`opencode         ${report.opencode?.error ? `FAILED: ${report.opencode.error}` : 'wired   global plugin'}`);
-    console.log('\nGlobal default is ON. Open ANY project with these agents and context.md appears automatically.');
+    console.log('\nGlobal default is ON. WARNING: this rewrites your USER-LEVEL agent configs');
+    console.log('(~/.claude, ~/.codex, ~/.gemini, ~/.cursor, ~/.config/opencode) in every project.');
+    console.log('Undo anytime with: context-md uninstall --global');
     return;
   }
   for (const item of report.instructionFiles) console.log(`  block ${item.removed ? 'removed' : 'absent'}  ${item.file}`);
@@ -110,12 +134,12 @@ const args = rest;
 
 switch (command) {
   case 'install':
-    if (args.includes('--global')) { printGlobalReport(installGlobal({ home: globalHome(args) })); break; }
-    printReport(install(resolveTarget(args)));
+    if (args.includes('--global')) { safe(() => printGlobalReport(installGlobal({ home: globalHome(args) }))); break; }
+    safe(() => printReport(install(resolveTarget(args))));
     break;
   case 'uninstall':
-    if (args.includes('--global')) { printGlobalReport(uninstallGlobal({ home: globalHome(args) })); break; }
-    printReport(uninstall(resolveTarget(args), { removeContext: args.includes('--remove-context') }));
+    if (args.includes('--global')) { safe(() => printGlobalReport(uninstallGlobal({ home: globalHome(args) }))); break; }
+    safe(() => printReport(uninstall(resolveTarget(args), { removeContext: args.includes('--remove-context') })));
     break;
   case 'backfill': {
     const root = resolveTarget(args);

@@ -3,3 +3,8 @@ node_modules/
 .DS_Store
 .context/session-state.json
 .context/.last-scan
+# context-md
+.claude/settings.json.bak-*
+.codex/hooks.json.bak-*
+.gemini/settings.json.bak-*
+.cursor/hooks.json.bak-*

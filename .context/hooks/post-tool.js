@@ -24,32 +24,44 @@ try { lib = await import(pathToFileURL(RUNTIME_LIB).href); } catch { process.std
 
 const root = (() => { try { return lib.findRoot(process.cwd()) || path.resolve(__dirname, '..', '..'); } catch { return path.resolve(__dirname, '..', '..'); } })();
 
-// Global runtime defers to a repo's local runtime when present.
-if (HOOK_IS_GLOBAL && fs.existsSync(path.join(root, '.context', 'lib', 'context-file.js'))) {
+// Global runtime defers to a repo's local runtime when present, and activates
+// only in project-like folders (.git or a known manifest).
+const MANIFESTS = ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'Gemfile', 'composer.json', 'requirements.txt', 'setup.py', 'Dockerfile', '.git'];
+const projectLike = MANIFESTS.some((m) => fs.existsSync(path.join(root, m)));
+if (HOOK_IS_GLOBAL && (fs.existsSync(path.join(root, '.context', 'lib', 'context-file.js')) || !projectLike)) {
   process.stdout.write('{}');
   process.exit(0);
 }
 
 try {
   const changed = lib.extractChangedFile(input.tool_input ?? input);
+  // Strip control chars so repo-controlled paths cannot smuggle escape/formatting
+  // sequences into the shared context.md (best-effort containment).
+  const changedSafe = changed ? String(changed).replace(/[\u0000-\u001f\u007f]+/g, '').slice(0, 300) : null;
   const ts = new Date().toISOString();
-  lib.appendChangeLog(root, changed ? `edited ${changed}` : 'file edited');
-
-  // Per-session edit tracker: an agent that edits any file without then
-  // updating context.md trips the stop gate at session end.
+  const cmdText = (() => { try { const t = input.tool_input ?? input ?? {}; const c = t.command ?? t.cmd ?? t.script ?? t.patch ?? t.input; return typeof c === 'string' ? c.slice(0, 4000) : ''; } catch { return ''; } })();
+  // Nested-path safe: normalize (absolute → relative) before comparing to root context.md (#32).
+  const rel = changed ? path.normalize(path.isAbsolute(changed) ? path.relative(root, changed) : changed) : null;
+  const ctxTouchFromPath = rel === 'context.md';
+  // Best-effort: a shell command that writes context.md also counts as touching it (#31).
+  const ctxTouchFromCmd = Boolean(cmdText) && cmdText.includes('context.md') && />>?|tee|sed|mv|cp|patch|truncate|rm|git\s+add|git\s+commit/i.test(cmdText);
+  const touchesContext = ctxTouchFromPath || ctxTouchFromCmd;
+  const backfillMarker = path.join(root, '.context', '.backfill-done');
+  const backfillDone = fs.existsSync(backfillMarker);
+  // Track state BEFORE logging so a log failure cannot silently disarm the gates (#39).
   const statePath = path.join(root, '.context', 'session-state.json');
-  let state = { edits: 0, pendingEdit: false, lastEdit: null };
-  try { state = { ...state, ...JSON.parse(fs.readFileSync(statePath, 'utf8')) }; } catch {}
-  const touchesContext = changed ? /(^|[\/])context.md$/i.test(changed) : false;
+  let state = { edits: 0, pendingEdit: false, lastEdit: null, backfillPending: false, stopCount: 0 };
+  try { let raw = fs.readFileSync(statePath, 'utf8'); if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1); state = { ...state, ...JSON.parse(raw) }; } catch {}
   if (touchesContext) {
     state.pendingEdit = false;
-    state.backfillPending = false;
+    if (backfillDone) state.backfillPending = false; // only the marker clears a backfill (#40)
   } else {
     state.edits = (state.edits || 0) + 1;
     state.pendingEdit = true;
     state.lastEdit = ts;
   }
-  try { fs.writeFileSync(statePath, JSON.stringify(state), 'utf8'); } catch {}
+  try { fs.mkdirSync(path.join(root, '.context'), { recursive: true }); fs.writeFileSync(statePath, JSON.stringify(state), 'utf8'); } catch {}
+  try { lib.appendChangeLog(root, changedSafe ? 'edited "' + changedSafe + '"' : 'file edited'); } catch {}
 
   // Refresh the snapshot only when something cheap hints the stack changed.
   const manifests = ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'Gemfile'];

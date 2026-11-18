@@ -122,12 +122,12 @@ structurally impossible to ignore. **context-md enforces the discipline with fiv
    `BeforeAgent` (Claude Code, Codex, Gemini CLI): read context.md first,
    update it with every decision/change, never finish with it stale — no
    compromise.
-2. **Read gate (PreToolUse)** — the agent’s **file edits are hard-blocked**
-   until something in this session has read `context.md` (any Read/Grep/Shell
-   command carrying the filename clears the gate). Claude Code / Codex deny via
-   `permissionDecision`, Gemini via `BeforeTool` deny, Cursor via `preToolUse`
-   `permission: deny`. Missing `context.md` is recreated automatically on the
-   first tool call — a fresh project can never start work without it.
+2. **Read gate (PreToolUse)** — the agent’s file edits are hard-denied until this
+   session has read the real `context.md`. A clear requires a read-ish tool
+   touching the file itself, or a shell command with an actual read verb
+   (`cat`, `grep`, `Get-Content`…); `echo context.md` does not clear it.
+   Advisory enforcement, not a sandbox — but it stops silent "skip the file"
+   edits on Claude Code / Codex / Gemini CLI / Cursor.
 3. **Per-edit hooks** — every file edit the agent makes is appended to the
    Change Log synchronously (`- 2026-11-18T10:00:00Z edited src/index.ts`), and
    a per-session tracker records that files changed.
@@ -194,11 +194,14 @@ identical.
 ## Honest limitations
 
 - **“Zero loss” now means**: nothing gets *lost on disk* (every edit logged,
-  every edit forces a context-md update via the stop gate on 4 agents, CI
-  blocks stale merges). What it still cannot guarantee: the LLM forgetting a
-  *decision* it never wrote down and the stop gate never saw (e.g. a pure
-  reasoning step with zero file edits — nothing stops the turn). That bound is
-  physics, not tooling: only the agent itself can write its own thoughts down.
+  every edit forces a context.md update via the stop gate on 4 agents, CI
+  blocks stale merges). It still cannot guarantee anything an agent refuses to
+  write down, or sessions where **no file is ever edited** (nothing to detect).
+  That bound is physics, not tooling.
+- Committed `.context/` is **executable code** every clone runs when an agent
+  opens the repo — review it like CI, not like docs. See [SECURITY.md](SECURITY.md).
+- Gates are advisory deny rules, **not a sandbox**: they exist to stop
+  "silently skip the file" drift, and they do that.
 - **Strict per-prompt injection** only exists where the prompt hook can inject
   context (Claude Code / Codex `UserPromptSubmit`, Gemini `BeforeAgent`). Cursor's
   `beforeSubmitPrompt` only allows/blocks, so Cursor gets the session start + read
@@ -221,11 +224,12 @@ context-md uninstall --remove-context
 
 ## Development
 
-See [PUBLISHING.md](PUBLISHING.md) for the maintainer release flow and a live-
-verification playbook (requires a working model account in the agent being tested).
+See [SECURITY.md](SECURITY.md) for the threat model (committed `.context/` is
+executable code — review it like CI) and [PUBLISHING.md](PUBLISHING.md) for the
+maintainer release flow and a live-verification playbook.
 
 ```bash
-npm test          # node --test — 23 end-to-end tests
+npm test          # node --test — end-to-end tests
 ```
 
 Layout: `bin/context-md.js` (CLI) · `src/scan.js` (repo scan/detect) ·

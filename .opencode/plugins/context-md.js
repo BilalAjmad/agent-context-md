@@ -1,5 +1,7 @@
 // context-md — opencode plugin (v1 + v2 compatible)
 // Refreshes context.md on session start and after file edits.
+// NOTE: opencode has no verified turn-end hook, so there is no stop gate here —
+// the protocol (read first, update always) is carried by the AGENTS.md block.
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
