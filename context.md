@@ -8,10 +8,10 @@
 ## Snapshot
 
 <!-- context-md:snapshot:start -->
-- Updated: 2026-11-18T15:21:10.710Z
-- Git: main @ 5dafdf5 · 7 uncommitted change(s)
+- Updated: 2026-11-18T15:27:56.130Z
+- Git: main @ eea2103 · 13 uncommitted change(s)
 - Stack: Node.js
-- Files (excl. deps/build): 21 · dependencies: 0
+- Files (excl. deps/build): 22 · dependencies: 0
 - Scripts: test=`node --test`
 <!-- context-md:snapshot:end -->
 
@@ -27,6 +27,7 @@ CHANGELOG.md
 CLAUDE.md
 context.md
 CONTRIBUTING.md
+CONVENTIONS.md
 GEMINI.md
 LICENSE
 package.json
@@ -52,11 +53,13 @@ Zero-dependency Node CLI (`context-md`) that wires **any repository** to live `c
 
 ## Current Focus / Next Steps
 
-- Feature-complete for v0.1.0 (27/27 tests, interactive agent picker, `--clients`,
-  `--all`, no API keys, `context-md doctor`, SECURITY.md, PUBLISHING.md, CI workflow).
-- Machine scan (read-only): 131 top-level git repos; 5 wired with context.md.
-- Global default still available but NOT activated on this machine (maintainer's call):
-  `context-md install --global` (interactive picker supported).
+- Feature-complete for v0.1.0 (27/27 tests, ALL-WORLD instruction-file coverage:
+  AGENTS.md + CLAUDE.md + GEMINI.md + copilot-instructions + Kiro + Cursor +
+  Devin/Windsurf + Continue + Junie + Amazon Q + Cline/legacy + Roo + Kilo +
+  Augment + Tabnine + Zed .rules + Aider CONVENTIONS.md). Hook enforcement for
+  Claude/Codex/Gemini/Cursor; opencode plugin (no verified turn-end gate).
+- Machine scan (read-only): 131 top-level git repos; 5 wired. Global default
+  available but NOT activated (maintainer's call): `context-md install --global`.
 - Waiting on maintainer: GitHub remote + push, optional `npm publish`.
 
 ## Change Log

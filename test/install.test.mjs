@@ -54,7 +54,7 @@ test('install wires Claude Code, Codex, Gemini, Cursor, opencode', () => {
 });
 
 test('install writes instruction blocks into agent instruction files', () => {
-  for (const rel of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.github/copilot-instructions.md', '.cursor/rules/context-md.mdc', '.kiro/steering/context-md.md']) {
+  for (const rel of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.github/copilot-instructions.md', '.cursor/rules/context-md.mdc', '.kiro/steering/context-md.md', '.continue/rules/context-md.md', '.junie/guidelines.md', '.roo/rules/context-md.md', '.amazonq/rules/context-md.md', '.rules', 'CONVENTIONS.md']) {
     const file = path.join(fixture, rel);
     assert.ok(fs.existsSync(file), `${rel} missing`);
     assert.ok(fs.readFileSync(file, 'utf8').includes('<!-- context-md:start -->'), `${rel} missing block`);

@@ -13,15 +13,28 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = __dirname;
 
 const INSTRUCTION_FILES = [
+  // Universal cross-vendor standard (read by virtually every coding agent)
   'AGENTS.md',
+  // VS Code / JetBrains family
   'CLAUDE.md',
   'GEMINI.md',
-  '.clinerules',
   '.github/copilot-instructions.md',
+  '.kiro/steering/context-md.md',
   '.cursor/rules/context-md.mdc',
   '.devin/rules/context-md.md',
   '.windsurf/rules/context-md.md',
-  '.kiro/steering/context-md.md',
+  '.continue/rules/context-md.md',
+  '.junie/guidelines.md',
+  '.amazonq/rules/context-md.md',
+  // Autonomous agent CLIs
+  '.clinerules',
+  '.roo/rules/context-md.md',
+  '.kilocode/rules/context-md.md',
+  '.augment/rules/context-md.md',
+  '.tabnine/guidelines/context-md.md',
+  // Editors / other agents
+  '.rules',             // Zed
+  'CONVENTIONS.md',     // Aider
 ];
 
 const KIRO_STEERING = `---
