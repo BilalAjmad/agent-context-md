@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { instructionBlock, INSTRUCTION_MARKER, INSTRUCTION_END, OPENCODE_PLUGIN, GLOBAL_OPENCODE_PLUGIN, SESSION_START_HOOK, POST_TOOL_HOOK, STOP_HOOK } from './templates.js';
+import { instructionBlock, INSTRUCTION_MARKER, INSTRUCTION_END, OPENCODE_PLUGIN, GLOBAL_OPENCODE_PLUGIN, SESSION_START_HOOK, POST_TOOL_HOOK, READ_GATE_HOOK, STOP_HOOK } from './templates.js';
 import { ensureContextFile, refreshDeterministic, contextPath } from './context-file.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +127,7 @@ export function copyRuntimeTo(destDir) {
   fs.copyFileSync(path.join(SRC_DIR, 'context-file.js'), path.join(destLib, 'context-file.js'));
   fs.writeFileSync(path.join(destHooks, 'session-start.js'), SESSION_START_HOOK, 'utf8');
   fs.writeFileSync(path.join(destHooks, 'post-tool.js'), POST_TOOL_HOOK, 'utf8');
+  fs.writeFileSync(path.join(destHooks, 'read-gate.js'), READ_GATE_HOOK, 'utf8');
   fs.writeFileSync(path.join(destHooks, 'stop-check.js'), STOP_HOOK, 'utf8');
   // ESM modules even when the target repo has no "type": "module".
   fs.writeFileSync(path.join(destDir, 'package.json'), JSON.stringify({ type: 'module' }, null, 2) + '\n', 'utf8');
@@ -217,9 +218,13 @@ export function installClaude(root, opts = {}) {
   const cmd = agentCommand('claude', 'post-tool.js', opts);
   const start = agentCommand('claude', 'session-start.js', opts);
   const stop = stopCommand(root, 'claude', opts);
+  const readGate = `${agentCommand('claude', 'read-gate.js', opts)} --agent=claude`;
   settings.hooks = mergeHooks(settings.hooks, {
     SessionStart: [
       { matcher: 'startup|resume|clear|compact', hooks: [{ type: 'command', command: start, timeout: 15 }] },
+    ],
+    PreToolUse: [
+      { matcher: 'Read|Grep|Glob|Bash|Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: readGate, timeout: 15 }] },
     ],
     PostToolUse: [
       { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: cmd, timeout: 15 }] },
@@ -237,9 +242,13 @@ export function installCodex(root, opts = {}) {
   const file = path.join(root, '.codex', 'hooks.json');
   const config = readJson(file) ?? { description: 'context-md hooks', hooks: {} };
   const stop = stopCommand(root, 'codex', opts);
+  const readGate = `${agentCommand('codex', 'read-gate.js', opts)} --agent=codex`;
   config.hooks = mergeHooks(config.hooks, {
     SessionStart: [
       { matcher: 'startup|resume|clear|compact|fork', hooks: [{ type: 'command', command: agentCommand('codex', 'session-start.js', opts), timeout: 15 }] },
+    ],
+    PreToolUse: [
+      { matcher: 'Bash|apply_patch|Edit|Write', hooks: [{ type: 'command', command: readGate, timeout: 15 }] },
     ],
     PostToolUse: [
       { matcher: 'Edit|Write|apply_patch', hooks: [{ type: 'command', command: agentCommand('codex', 'post-tool.js', opts), timeout: 15 }] },
@@ -259,9 +268,13 @@ export function installGemini(root, opts = {}) {
   const cmd = agentCommand('gemini', 'post-tool.js', opts);
   const start = agentCommand('gemini', 'session-start.js', opts);
   const stop = stopCommand(root, 'gemini', opts);
+  const readGate = `${agentCommand('gemini', 'read-gate.js', opts)} --agent=gemini`;
   settings.hooks = mergeHooks(settings.hooks, {
     SessionStart: [
       { matcher: '*', hooks: [{ name: 'context-md', type: 'command', command: start, timeout: 15000, description: 'Refresh context.md at session start' }] },
+    ],
+    BeforeTool: [
+      { matcher: '.*', hooks: [{ name: 'context-md', type: 'command', command: readGate, timeout: 15000, description: 'Block file edits until context.md is read' }] },
     ],
     AfterTool: [
       { matcher: 'write_file|replace|edit|write_todos', hooks: [{ name: 'context-md', type: 'command', command: cmd, timeout: 15000, description: 'Log file edit into context.md' }] },
@@ -282,8 +295,10 @@ export function installCursor(root, opts = {}) {
   const start = agentCommand('cursor', 'session-start.js', opts);
   config.version = 1;
   const stop = stopCommand(root, 'cursor', opts);
+  const readGate = `${agentCommand('cursor', 'read-gate.js', opts)} --agent=cursor`;
   config.hooks = mergeHooks(config.hooks, {
     sessionStart: [{ command: start, timeout: 15 }],
+    preToolUse: [{ command: readGate, timeout: 15, matcher: 'Read|Grep|Shell|Write|Edit|Delete' }],
     postToolUse: [{ command: cmd, timeout: 15, matcher: 'Write|Edit|Shell' }],
     stop: [{ command: stop, timeout: 15, loop_limit: 2 }],
   });
@@ -408,6 +423,7 @@ export function uninstallRuntime(root) {
   for (const rel of [
     '.context/hooks/session-start.js',
     '.context/hooks/post-tool.js',
+    '.context/hooks/read-gate.js',
     '.context/hooks/stop-check.js',
     '.context/lib/scan.js',
     '.context/lib/context-file.js',

@@ -35,6 +35,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.context/hooks/read-gate.js\" --agent=codex",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

@@ -18,6 +18,8 @@ First release.
 - **Stop gate**: `Stop` hook (Claude Code / Codex), `AfterAgent` deny→retry
   (Gemini CLI), `stop` hook with followup (Cursor) — blocks turn end until
   `context.md` was updated after the last edit.
+- **Read gate**: pre-tool hook hard-denies file edits until `context.md` has
+  been read this session (Claude Code / Codex / Gemini CLI / Cursor).
 - **First-run backfill**: repos wired for the first time get a one-time deep
   backfill — the agent must read README/manifests/key sources and rewrite
   `context.md` Purpose + Key Knowledge with real facts (`.context/.backfill-done`

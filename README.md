@@ -32,11 +32,11 @@ npx github:<you>/context-md install
         │   .github/copilot-instructions.md / .cursor/rules/*.mdc /
         │   .kiro/steering/*.md / .clinerules / .devin/rules / .windsurf/rules
         └── hooks wired into every agent:
-             SessionStart → refresh context.md, tell the agent to read it FIRST
-             PostToolUse  → append "- <timestamp> edited <file>" to the Change Log
-             Stop gate    → BLOCK session end until context.md was updated
-                            after the last file edit (Claude Code / Codex /
-                            Gemini CLI AfterAgent / Cursor stop hook)
+             SessionStart  → refresh context.md, tell the agent to read it FIRST
+             PreToolUse    → READ GATE: deny file edits until context.md was read this session
+             PostToolUse   → append "- <timestamp> edited <file>" to the Change Log
+             Stop gate     → BLOCK session end until context.md was updated
+                             after the last file edit
 ```
 
 `context.md` is split into **auto-managed sections** (snapshot, structure,
@@ -107,21 +107,26 @@ idempotent: re-running install refreshes in place, never duplicates.
 ## How “real-time, zero context loss” actually works
 
 No tool can force an LLM to retain every thought — but it can make drift
-structurally impossible to ignore. **context-md enforces the discipline with four layers**:
+structurally impossible to ignore. **context-md enforces the discipline with five layers**:
 
 1. **SessionStart injection** — every agent session begins with
    `context.md: read this first` injected into context (Claude Code, Codex,
    Gemini CLI via hook-specific output; plain-text for Codex; instruction files
    for the rest).
-2. **Per-edit hooks** — every file edit the agent makes is appended to the
+2. **Read gate (PreToolUse)** — the agent’s **file edits are hard-blocked**
+   until something in this session has read `context.md` (any Read/Grep/Shell
+   command carrying the filename clears the gate). Claude Code / Codex deny via
+   `permissionDecision`, Gemini via `BeforeTool` deny, Cursor via `preToolUse`
+   `permission: deny`. The agent physically cannot edit without reading first.
+3. **Per-edit hooks** — every file edit the agent makes is appended to the
    Change Log synchronously (`- 2026-11-18T10:00:00Z edited src/index.ts`), and
    a per-session tracker records that files changed.
-3. **Stop gate** — if the agent edited any file this session and did not then
+4. **Stop gate** — if the agent edited any file this session and did not then
    update `context.md`, the session-end hook **blocks the stop** and forces the
    agent to update Purpose / Key Knowledge / Current Focus (Claude Code `Stop`,
    Codex `Stop`, Gemini CLI `AfterAgent` deny→retry, Cursor `stop`
    followup + loop limit). The agent cannot finish without writing it down.
-4. **Verify in CI** — `context-md verify` fails the build if files changed but
+5. **Verify in CI** — `context-md verify` fails the build if files changed but
    `context.md` was not refreshed. Drift becomes impossible to merge silently.
 
 ## First-run backfill (the "pichla saara context" pass)
@@ -148,18 +153,18 @@ written into every instruction file in the repo.
 
 ## Agent support matrix
 
-| Agent | How it reads context.md first | Per-edit hook | Stop gate | Status |
-|---|---|---|---|---|
-| **Claude Code** | `SessionStart` hook + `CLAUDE.md` | `PostToolUse` (Edit/Write/MultiEdit/NotebookEdit) | `Stop` hook — blocks end until updated | ✅ full |
-| **Codex (OpenAI)** | `SessionStart` hook (`.codex/hooks.json`) + `AGENTS.md` | `PostToolUse` (apply_patch/Edit/Write) | `Stop` hook — decision block | ✅ full |
-| **Gemini CLI** | `SessionStart` hook (`.gemini/settings.json`) + `GEMINI.md` | `AfterTool` (write_file/replace/edit) | `AfterAgent` deny → auto-retry | ✅ full |
-| **Cursor** (1.7+) | `.cursor/hooks.json` + `.cursor/rules/context-md.mdc` | `postToolUse` (Write/Edit) | `stop` hook followup + loop_limit 2 | ✅ full |
-| **opencode** | `.opencode/plugins/context-md.js` + `AGENTS.md` | `tool.execute.after` (V1 + V2) | no stop gate (API unverified) | ⚠️ no stop gate |
-| **GitHub Copilot** | `.github/copilot-instructions.md` | none (no hook API) | none | ⚠️ instructions only |
-| **Kiro** | `.kiro/steering/context-md.md` (`inclusion: always`) | none verified | none | ⚠️ steering only |
-| **Windsurf / Devin** | `.devin/rules/context-md.md`, legacy `.windsurf/rules/` | `.devin/hooks.v1.json` not wired (unverified) | unverified | ⚠️ rules only |
-| **Cline** | `.clinerules` | SDK plugin required (roadmap) | unverified | ⚠️ rules only |
-| **Kilo** | `AGENTS.md` | none (no hook API) | none | ⚠️ instructions only |
+| Agent | Reads context.md first | Read gate (edits blocked) | Per-edit hook | Stop gate | Status |
+|---|---|---|---|---|---|
+| **Claude Code** | `SessionStart` hook + `CLAUDE.md` | ✅ `PreToolUse` deny | `PostToolUse` | `Stop` hook | ✅ full |
+| **Codex (OpenAI)** | `SessionStart` hook (`.codex/hooks.json`) + `AGENTS.md` | ✅ `PreToolUse` deny | `PostToolUse` | `Stop` hook | ✅ full |
+| **Gemini CLI** | `SessionStart` hook (`.gemini/settings.json`) + `GEMINI.md` | ✅ `BeforeTool` deny | `AfterTool` | `AfterAgent` deny | ✅ full |
+| **Cursor** (1.7+) | `.cursor/hooks.json` + `.cursor/rules/context-md.mdc` | ✅ `preToolUse` deny | `postToolUse` | `stop` hook | ✅ full |
+| **opencode** | `.opencode/plugins/context-md.js` + `AGENTS.md` | ❌ (plugin API has no verified block) | `tool.execute.after` | ❌ no turn-end gate | ⚠️ logs+rules only |
+| **GitHub Copilot** | `.github/copilot-instructions.md` | ❌ | ❌ (no hook API) | ❌ | ⚠️ instructions only |
+| **Kiro** | `.kiro/steering/context-md.md` (`inclusion: always`) | ❌ | ❌ none verified | ❌ | ⚠️ steering only |
+| **Windsurf / Devin** | `.devin/rules/context-md.md`, legacy `.windsurf/rules/` | ❌ | ❌ unverified schema | ❌ | ⚠️ rules only |
+| **Cline** | `.clinerules` | ❌ | ❌ SDK plugin required | ❌ | ⚠️ rules only |
+| **Kilo** | `AGENTS.md` | ❌ | ❌ | ❌ | ⚠️ instructions only |
 
 Agents without a hook API still get the hard-rules instruction block and the
 `context-md verify` CI gate — enforcement is weaker there, but the protocol is

@@ -8,22 +8,24 @@
 ## Snapshot
 
 <!-- context-md:snapshot:start -->
-- Updated: 2026-11-18T10:30:22.693Z
-- Git: main @ 9bb8c34 · 21 uncommitted change(s)
+- Updated: 2026-11-18T13:28:49.537Z
+- Git: main @ 278bef0 · 6 uncommitted change(s)
 - Stack: Node.js
-- Files (excl. deps/build): 13 · dependencies: 0
+- Files (excl. deps/build): 16 · dependencies: 0
 - Scripts: test=`node --test`
 <!-- context-md:snapshot:end -->
 
 ## Structure
 
 <!-- context-md:structure:start -->
-.github/  (1 files)
+.github/  (2 files)
 src/  (4 files)
 test/  (1 files)
 AGENTS.md
+CHANGELOG.md
 CLAUDE.md
 context.md
+CONTRIBUTING.md
 GEMINI.md
 LICENSE
 package.json
@@ -47,7 +49,8 @@ Zero-dependency Node CLI (`context-md`) that wires **any repository** to live `c
 
 ## Current Focus / Next Steps
 
-- Feature-complete for v0.1.0 (17/17 tests, CI workflow, CHANGELOG, CONTRIBUTING, `npm pack` 8 files / 20.4 kB verified).
+- Feature-complete for v0.1.0 (20/20 tests, CI workflow, CHANGELOG, CONTRIBUTING, `npm pack` 8 files / 20.4 kB verified).
+- Read gate added (PreToolUse deny until context.md is read this session).
 - Waiting on maintainer: GitHub remote + `npm publish` (or GitHub-only release via `npx github:<user>/context-md`).
 - Optional machine-wide activation on the maintainer's machine: `context-md install --global`.
 - Known gap (documented, not hidden): opencode has no verified turn-end hook, so no stop gate there; Windsurf/Cline stop gates untested.

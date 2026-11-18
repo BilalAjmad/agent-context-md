@@ -47,10 +47,10 @@ try {
 
 try {
   fs.mkdirSync(path.join(root, '.context'), { recursive: true });
-  fs.writeFileSync(path.join(root, '.context', 'session-state.json'), JSON.stringify({ edits: 0, pendingEdit: false, lastEdit: null, backfillPending: !backfillDone }), 'utf8');
+  fs.writeFileSync(path.join(root, '.context', 'session-state.json'), JSON.stringify({ edits: 0, pendingEdit: false, lastEdit: null, backfillPending: !backfillDone, contextRead: false }), 'utf8');
 } catch {}
 
-const taskContext = 'MANDATORY (context-md): before ANY work in this repo, read the FULL context.md in the repo root. It is the live source of truth for what this project is, its structure, key decisions and current focus. After meaningful decisions/changes, UPDATE context.md (Purpose / Key Knowledge / Current Focus). The stop gate will block session end if files changed and context.md was not updated. Do not trust prior memory over the file.';
+const taskContext = 'MANDATORY (context-md): before ANY work in this repo, read the FULL context.md in the repo root — the pre-tool READ GATE blocks all file edits until context.md has been read this session. It is the live source of truth for what this project is, its structure, key decisions and current focus. After meaningful decisions/changes, UPDATE context.md (Purpose / Key Knowledge / Current Focus). The stop gate will block session end if files changed and context.md was not updated. Do not trust prior memory over the file.';
 const firstRun = 'FIRST-RUN BACKFILL (context-md): this project has never been backfilled. Before ANY other task, do this and nothing else: (1) read README* and docs/ if any, the manifests (package.json / pyproject.toml / go.mod / Cargo.toml / pom.xml), and the 2-4 most important source files; (2) run git log --oneline -50 to understand the arc of the project; (3) rewrite context.md Purpose and Key Knowledge with the REAL project purpose, stack decisions, conventions and gotchas (NO placeholders, NO invented facts); (4) create an empty file .context/.backfill-done (mkdir -p .context first if needed); (5) tell the user the backfill is done. While backfillPending is set, finishing any file edits without doing this will be blocked at session end.';
 
 const payload = {

@@ -20,6 +20,13 @@
         "timeout": 15,
         "loop_limit": 2
       }
+    ],
+    "preToolUse": [
+      {
+        "command": "node \"./.context/hooks/read-gate.js\" --agent=cursor",
+        "timeout": 15,
+        "matcher": "Read|Grep|Shell|Write|Edit|Delete"
+      }
     ]
   }
 }

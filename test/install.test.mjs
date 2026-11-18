@@ -228,6 +228,51 @@ test('global uninstall removes machine-wide wiring', () => {
   }
 });
 
+test('read gate blocks edits until context.md is read (all agents)', () => {
+  const readGate = path.join(fixture, '.context', 'hooks', 'read-gate.js');
+  const statePath = path.join(fixture, '.context', 'session-state.json');
+  const reset = () => fs.writeFileSync(statePath, JSON.stringify({ edits: 0, pendingEdit: false, lastEdit: null, backfillPending: false, contextRead: false }));
+
+  reset();
+  const denied = execFileSync(process.execPath, [readGate, '--agent=claude'], { cwd: fixture, input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'src/index.js' } }), encoding: 'utf8' });
+  assert.equal(JSON.parse(denied).hookSpecificOutput.permissionDecision, 'deny');
+
+  reset();
+  const deniedGemini = execFileSync(process.execPath, [readGate, '--agent=gemini'], { cwd: fixture, input: JSON.stringify({ tool_name: 'write_file', tool_input: { file_path: 'src/index.js', content: 'x' } }), encoding: 'utf8' });
+  assert.equal(JSON.parse(deniedGemini).decision, 'deny');
+
+  reset();
+  const deniedCursor = execFileSync(process.execPath, [readGate, '--agent=cursor'], { cwd: fixture, input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: 'src/index.js' } }), encoding: 'utf8' });
+  assert.equal(JSON.parse(deniedCursor).permission, 'deny');
+
+  // A Read of context.md by any tool clears the gate
+  const readOut = execFileSync(process.execPath, [readGate, '--agent=claude'], { cwd: fixture, input: JSON.stringify({ tool_name: 'Read', tool_input: { file_path: 'context.md' } }), encoding: 'utf8' });
+  assert.equal(readOut.trim(), '{}');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(state.contextRead, true);
+
+  // Now the edit is allowed
+  const allowed = execFileSync(process.execPath, [readGate, '--agent=claude'], { cwd: fixture, input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'src/index.js' } }), encoding: 'utf8' });
+  assert.equal(allowed.trim(), '{}');
+});
+
+test('read gate also clears when context.md is read via shell', () => {
+  const readGate = path.join(fixture, '.context', 'hooks', 'read-gate.js');
+  const statePath = path.join(fixture, '.context', 'session-state.json');
+  fs.writeFileSync(statePath, JSON.stringify({ edits: 0, pendingEdit: false, lastEdit: null, backfillPending: false, contextRead: false }));
+  const out = execFileSync(process.execPath, [readGate, '--agent=codex'], { cwd: fixture, input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'cat context.md' } }), encoding: 'utf8' });
+  assert.equal(out.trim(), '{}');
+  assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).contextRead, true);
+});
+
+test('session-start resets the read gate', () => {
+  const start = path.join(fixture, '.context', 'hooks', 'session-start.js');
+  const statePath = path.join(fixture, '.context', 'session-state.json');
+  fs.writeFileSync(statePath, JSON.stringify({ edits: 2, pendingEdit: true, lastEdit: null, backfillPending: false, contextRead: true }));
+  execFileSync(process.execPath, [start], { cwd: fixture, input: '{}', stdio: ['pipe', 'pipe', 'pipe'] });
+  assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).contextRead, false);
+});
+
 test('uninstall removes blocks and hooks but keeps context.md', () => {
   const out = run(['uninstall', fixture]);
   assert.match(out, /kept/);
