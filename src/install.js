@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { instructionBlock, INSTRUCTION_MARKER, INSTRUCTION_END, OPENCODE_PLUGIN, SESSION_START_HOOK, POST_TOOL_HOOK } from './templates.js';
+import { instructionBlock, INSTRUCTION_MARKER, INSTRUCTION_END, OPENCODE_PLUGIN, SESSION_START_HOOK, POST_TOOL_HOOK, STOP_HOOK } from './templates.js';
 import { ensureContextFile, refreshDeterministic, contextPath } from './context-file.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -120,6 +120,7 @@ export function copyRuntime(root) {
   fs.copyFileSync(path.join(SRC_DIR, 'context-file.js'), path.join(destLib, 'context-file.js'));
   fs.writeFileSync(path.join(destHooks, 'session-start.js'), SESSION_START_HOOK, 'utf8');
   fs.writeFileSync(path.join(destHooks, 'post-tool.js'), POST_TOOL_HOOK, 'utf8');
+  fs.writeFileSync(path.join(destHooks, 'stop-check.js'), STOP_HOOK, 'utf8');
   // ESM modules even when the target repo has no "type": "module".
   fs.writeFileSync(path.join(root, '.context', 'package.json'), JSON.stringify({ type: 'module' }, null, 2) + '\n', 'utf8');
   return { lib: destLib, hooks: destHooks };
@@ -180,12 +181,16 @@ export function installClaude(root) {
   const settings = readJson(file) ?? {};
   const cmd = hookCommand(root, 'post-tool.js');
   const start = hookCommand(root, 'session-start.js');
+  const stop = `node "${path.join(root, '.context', 'hooks', 'stop-check.js').replace(/\\/g, '/')}" --agent=claude`;
   settings.hooks = mergeHooks(settings.hooks, {
     SessionStart: [
       { matcher: 'startup|resume|clear|compact', hooks: [{ type: 'command', command: start, timeout: 15 }] },
     ],
     PostToolUse: [
       { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: cmd, timeout: 15 }] },
+    ],
+    Stop: [
+      { hooks: [{ type: 'command', command: stop, timeout: 15 }] },
     ],
   });
   writeJson(file, settings);
@@ -196,12 +201,16 @@ export function installClaude(root) {
 export function installCodex(root) {
   const file = path.join(root, '.codex', 'hooks.json');
   const config = readJson(file) ?? { description: 'context-md hooks', hooks: {} };
+  const stop = `node "${path.join(root, '.context', 'hooks', 'stop-check.js').replace(/\\/g, '/')}" --agent=codex`;
   config.hooks = mergeHooks(config.hooks, {
     SessionStart: [
       { matcher: 'startup|resume|clear|compact|fork', hooks: [{ type: 'command', command: hookCommand(root, 'session-start.js'), timeout: 15 }] },
     ],
     PostToolUse: [
       { matcher: 'Edit|Write|apply_patch', hooks: [{ type: 'command', command: hookCommand(root, 'post-tool.js'), timeout: 15 }] },
+    ],
+    Stop: [
+      { hooks: [{ type: 'command', command: stop, timeout: 15 }] },
     ],
   });
   writeJson(file, config);
@@ -214,12 +223,16 @@ export function installGemini(root) {
   const settings = readJson(file) ?? {};
   const cmd = hookCommand(root, 'post-tool.js');
   const start = hookCommand(root, 'session-start.js');
+  const stop = `node "${path.join(root, '.context', 'hooks', 'stop-check.js').replace(/\\/g, '/')}" --agent=gemini`;
   settings.hooks = mergeHooks(settings.hooks, {
     SessionStart: [
       { matcher: '*', hooks: [{ name: 'context-md', type: 'command', command: start, timeout: 15000, description: 'Refresh context.md at session start' }] },
     ],
     AfterTool: [
       { matcher: 'write_file|replace|edit|write_todos', hooks: [{ name: 'context-md', type: 'command', command: cmd, timeout: 15000, description: 'Log file edit into context.md' }] },
+    ],
+    AfterAgent: [
+      { matcher: '*', hooks: [{ name: 'context-md', type: 'command', command: stop, timeout: 15000, description: 'Block turn end until context.md is updated' }] },
     ],
   });
   writeJson(file, settings);
@@ -233,9 +246,11 @@ export function installCursor(root) {
   const cmd = hookCommand(root, 'post-tool.js');
   const start = hookCommand(root, 'session-start.js');
   config.version = 1;
+  const stop = `node "${path.join(root, '.context', 'hooks', 'stop-check.js').replace(/\\/g, '/')}" --agent=cursor`;
   config.hooks = mergeHooks(config.hooks, {
     sessionStart: [{ command: start, timeout: 15 }],
     postToolUse: [{ command: cmd, timeout: 15, matcher: 'Write|Edit|Shell' }],
+    stop: [{ command: stop, timeout: 15, loop_limit: 2 }],
   });
   writeJson(file, config);
   return { agent: 'cursor', file };
@@ -298,10 +313,12 @@ export function uninstallRuntime(root) {
   for (const rel of [
     '.context/hooks/session-start.js',
     '.context/hooks/post-tool.js',
+    '.context/hooks/stop-check.js',
     '.context/lib/scan.js',
     '.context/lib/context-file.js',
     '.context/package.json',
     '.context/.last-scan',
+    '.context/session-state.json',
   ]) {
     try { fs.rmSync(path.join(root, rel), { force: true }); } catch {}
   }

@@ -111,6 +111,46 @@ test('verify passes on fresh context and fails after newer edits', async () => {
   assert.match(run(['verify', fixture]), /OK/);
 });
 
+test('stop gate blocks turn-end after edits without context.md update', () => {
+  const postTool = path.join(fixture, '.context', 'hooks', 'post-tool.js');
+  const stopCheck = path.join(fixture, '.context', 'hooks', 'stop-check.js');
+  // One non-context edit → pendingEdit = true
+  execFileSync(process.execPath, [postTool], { cwd: fixture, input: JSON.stringify({ tool_input: { file_path: 'src/index.js' } }), stdio: ['pipe', 'pipe', 'pipe'] });
+  const state = JSON.parse(fs.readFileSync(path.join(fixture, '.context', 'session-state.json'), 'utf8'));
+  assert.equal(state.pendingEdit, true);
+  // Stop gate must block with a Claude/Codex-style decision JSON
+  const blocked = execFileSync(process.execPath, [stopCheck, '--agent=claude'], { cwd: fixture, input: '{}', encoding: 'utf8' });
+  assert.deepEqual(Object.keys(JSON.parse(blocked)), ['decision', 'reason']);
+  assert.equal(JSON.parse(blocked).decision, 'block');
+});
+
+test('stop gate passes after an agent edit of context.md', () => {
+  const postTool = path.join(fixture, '.context', 'hooks', 'post-tool.js');
+  const stopCheck = path.join(fixture, '.context', 'hooks', 'stop-check.js');
+  // Agent updates context.md → pendingEdit cleared
+  execFileSync(process.execPath, [postTool], { cwd: fixture, input: JSON.stringify({ tool_input: { file_path: 'context.md' } }), stdio: ['pipe', 'pipe', 'pipe'] });
+  const state = JSON.parse(fs.readFileSync(path.join(fixture, '.context', 'session-state.json'), 'utf8'));
+  assert.equal(state.pendingEdit, false);
+  const out = execFileSync(process.execPath, [stopCheck, '--agent=claude'], { cwd: fixture, input: '{}', encoding: 'utf8' });
+  assert.equal(out.trim(), '{}');
+});
+
+test('stop gate passes when already continuing after a stop hook', () => {
+  const stopCheck = path.join(fixture, '.context', 'hooks', 'stop-check.js');
+  // Make state pending again
+  fs.writeFileSync(path.join(fixture, '.context', 'session-state.json'), JSON.stringify({ edits: 3, pendingEdit: true, lastEdit: new Date().toISOString() }));
+  const out = execFileSync(process.execPath, [stopCheck, '--agent=claude'], { cwd: fixture, input: JSON.stringify({ stop_hook_active: true }), encoding: 'utf8' });
+  assert.equal(out.trim(), '{}');
+});
+
+test('stop gate outputs gemini and cursor shapes', () => {
+  const stopCheck = path.join(fixture, '.context', 'hooks', 'stop-check.js');
+  const outGemini = execFileSync(process.execPath, [stopCheck, '--agent=gemini'], { cwd: fixture, input: '{}', encoding: 'utf8' });
+  assert.equal(JSON.parse(outGemini).decision, 'deny');
+  const outCursor = execFileSync(process.execPath, [stopCheck, '--agent=cursor'], { cwd: fixture, input: '{}', encoding: 'utf8' });
+  assert.match(JSON.parse(outCursor).followup_message, /context\.md/);
+});
+
 test('uninstall removes blocks and hooks but keeps context.md', () => {
   const out = run(['uninstall', fixture]);
   assert.match(out, /kept/);
