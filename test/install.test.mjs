@@ -329,6 +329,51 @@ test('session-start self-heals a corrupted context.md', () => {
   assert.ok(ctx.includes('context-md:snapshot:start'), 'self-heal must recreate marker sections');
 });
 
+test('--clients selects exactly the chosen agents', () => {
+  const sel = fs.mkdtempSync(path.join(os.tmpdir(), 'context-md-select-'));
+  try {
+    execSync('git init -b main', { cwd: sel, stdio: 'pipe' });
+    fs.writeFileSync(path.join(sel, 'package.json'), '{"name":"select-test"}');
+    run(['install', '--clients', 'claude-code,opencode', sel]);
+    assert.ok(fs.existsSync(path.join(sel, '.claude', 'settings.json')), 'claude wired');
+    assert.ok(fs.existsSync(path.join(sel, '.opencode', 'plugins', 'context-md.js')), 'opencode wired');
+    assert.ok(!fs.existsSync(path.join(sel, '.codex', 'hooks.json')), 'codex NOT wired');
+    assert.ok(!fs.existsSync(path.join(sel, '.gemini', 'settings.json')), 'gemini NOT wired');
+    assert.ok(!fs.existsSync(path.join(sel, '.cursor', 'hooks.json')), 'cursor NOT wired');
+    assert.ok(fs.readFileSync(path.join(sel, 'AGENTS.md'), 'utf8').includes('<!-- context-md:start -->'), 'instruction files always wired');
+  } finally {
+    fs.rmSync(sel, { recursive: true, force: true });
+  }
+});
+
+test('--clients with an unknown agent fails with exit 2', () => {
+  const sel = fs.mkdtempSync(path.join(os.tmpdir(), 'context-md-unknown-'));
+  try {
+    execSync('git init -b main', { cwd: sel, stdio: 'pipe' });
+    let code = 0;
+    try {
+      run(['install', '--clients', 'claude-code,bogusbot', sel]);
+    } catch (err) {
+      code = err.status;
+    }
+    assert.equal(code, 2);
+  } finally {
+    fs.rmSync(sel, { recursive: true, force: true });
+  }
+});
+
+test('global install honors --clients', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'context-md-home-'));
+  try {
+    run(['install', '--global', '--clients', 'gemini-cli', '--home', home]);
+    assert.ok(fs.existsSync(path.join(home, '.gemini', 'settings.json')), 'gemini global hooks wired');
+    assert.ok(!fs.existsSync(path.join(home, '.claude', 'settings.json')), 'claude global hooks NOT wired');
+    assert.ok(!fs.existsSync(path.join(home, '.config', 'opencode', 'plugins', 'context-md.js')), 'opencode not selected');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('uninstall removes blocks and hooks but keeps context.md', () => {
   const out = run(['uninstall', fixture]);
   assert.match(out, /kept/);

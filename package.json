@@ -8,7 +8,9 @@
   },
   "files": [
     "bin",
-    "src"
+    "src",
+    "SECURITY.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test"

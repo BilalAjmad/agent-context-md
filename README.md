@@ -12,7 +12,8 @@ npx github:<your-github-user>/context-md install
 ```
 
 That's it. Commit `context.md`, and your whole team (and every agent) starts
-every session with full context.
+every session with full context. **No API keys required** — context-md runs
+plain local hooks; your agents use your existing subscriptions.
 
 ## The problem
 
@@ -64,6 +65,13 @@ From a repository root:
 ```bash
 npx github:<your-github-user>/context-md install
 ```
+
+On a TTY this detects every supported agent on your machine and lets you **pick
+which ones to wire** (Enter = all detected, `1,3,5` = pick, `a` = all, `n` = none).
+Flags work everywhere: `--all` (wire all), `--clients claude-code,codex,gemini-cli`
+(pick by id), or non-interactive mode (defaults to all). Instruction files and
+`.context/` are wired for all agents regardless; the selector only controls the
+hook adapters.
 
 (or clone this repo and run `node bin/context-md.js install`)
 

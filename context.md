@@ -8,10 +8,10 @@
 ## Snapshot
 
 <!-- context-md:snapshot:start -->
-- Updated: 2026-11-18T14:37:23.192Z
-- Git: main @ 27a895b · 28 uncommitted change(s)
+- Updated: 2026-11-18T15:21:10.710Z
+- Git: main @ 5dafdf5 · 7 uncommitted change(s)
 - Stack: Node.js
-- Files (excl. deps/build): 20 · dependencies: 0
+- Files (excl. deps/build): 21 · dependencies: 0
 - Scripts: test=`node --test`
 <!-- context-md:snapshot:end -->
 
@@ -20,14 +20,13 @@
 <!-- context-md:structure:start -->
 .github/  (2 files)
 bin/  (1 files)
-src/  (4 files)
+src/  (6 files)
 test/  (1 files)
 AGENTS.md
 CHANGELOG.md
 CLAUDE.md
 context.md
 CONTRIBUTING.md
-debug-gate.mjs
 GEMINI.md
 LICENSE
 package.json
@@ -53,11 +52,12 @@ Zero-dependency Node CLI (`context-md`) that wires **any repository** to live `c
 
 ## Current Focus / Next Steps
 
-- Publish-ready v0.1.0 (24/24 tests, 5 strict review passes + fresh-eyes subagent reviews, `context-md doctor`, SECURITY.md threat model, PUBLISHING.md, CI workflow).
-- Security review hardened: symlink-safe atomic writes, corrupt-config skip (never overwrite), nested hook-shape guard, git -z freshness, persistent stop-gate cap (2 blocks/session), real-read-only read gate, global opencode plugin kept on uninstall, BOM-tolerant state parse.
-- Laptop scan (read-only): 131 top-level git repos, only 5 wired with context.md — bulk wiring requires the maintainer's go-ahead per repo or a one-time `install --global`.
-- Live-agent verification blocked at the model layer (API 402 insufficient credits) — hooks verified at the stdin/stdout contract level; re-run PUBLISHING.md §4 once credits exist.
-- Waiting on maintainer: GitHub remote + push, optional `npm publish`, optional `context-md install --global`.
+- Feature-complete for v0.1.0 (27/27 tests, interactive agent picker, `--clients`,
+  `--all`, no API keys, `context-md doctor`, SECURITY.md, PUBLISHING.md, CI workflow).
+- Machine scan (read-only): 131 top-level git repos; 5 wired with context.md.
+- Global default still available but NOT activated on this machine (maintainer's call):
+  `context-md install --global` (interactive picker supported).
+- Waiting on maintainer: GitHub remote + push, optional `npm publish`.
 
 ## Change Log
 

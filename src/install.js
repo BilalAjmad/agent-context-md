@@ -385,11 +385,11 @@ export function installOpencode(root) {
 }
 
 export const AGENT_ADAPTERS = [
-  installClaude,
-  installCodex,
-  installGemini,
-  installCursor,
-  installOpencode,
+  ['claude-code', installClaude],
+  ['codex', installCodex],
+  ['gemini-cli', installGemini],
+  ['cursor', installCursor],
+  ['opencode', installOpencode],
 ];
 
 // Remove only context-md hook entries (identified by our runtime path tags).
@@ -445,11 +445,12 @@ const GLOBAL_INSTRUCTION_FILES = [
 // Wires the global agent configs (user-level) + a standalone runtime at
 // <home>/.context-md. After this, any project you open with a supported agent
 // gets context.md automatically — the repo needs no manual install.
-export function installGlobal({ home } = {}) {
+export function installGlobal({ home, clients = null } = {}) {
   const homeDir = path.resolve(home || os.homedir());
   const runtimeDir = path.join(homeDir, '.context-md');
   const hooksDir = path.join(runtimeDir, 'hooks');
-  const report = { home: homeDir, runtime: null, instructionFiles: [], hooks: [], opencode: null };
+  const selected = new Set(clients ?? ['claude-code', 'codex', 'gemini-cli', 'cursor', 'opencode']);
+  const report = { home: homeDir, runtime: null, instructionFiles: [], hooks: [], opencode: null, skipped: [] };
 
   report.runtime = copyRuntimeTo(runtimeDir);
 
@@ -458,27 +459,32 @@ export function installGlobal({ home } = {}) {
   }
 
   const opts = { hooksDir };
-  for (const adapter of [installClaude, installCodex, installGemini, installCursor]) {
+  for (const [id, adapter] of [['claude-code', installClaude], ['codex', installCodex], ['gemini-cli', installGemini], ['cursor', installCursor]]) {
+    if (!selected.has(id)) { report.skipped.push(id); continue; }
     try {
       report.hooks.push(adapter(homeDir, opts));
     } catch (err) {
-      report.hooks.push({ agent: adapter.name.replace(/^install/, '').toLowerCase(), error: String(err?.message || err) });
+      report.hooks.push({ agent: id, error: String(err?.message || err) });
     }
   }
 
-  const pluginFile = path.join(homeDir, '.config', 'opencode', 'plugins', 'context-md.js');
-  try {
-    if (fsExists(pluginFile)) {
-      const cur = fs.readFileSync(pluginFile, 'utf8');
-      if (!cur.includes('// context-md')) backup(pluginFile);
+  if (!selected.has('opencode')) {
+    report.opencode = { agent: 'opencode', skipped: true };
+  } else {
+    const pluginFile = path.join(homeDir, '.config', 'opencode', 'plugins', 'context-md.js');
+    try {
+      if (fsExists(pluginFile)) {
+        const cur = fs.readFileSync(pluginFile, 'utf8');
+        if (!cur.includes('// context-md')) backup(pluginFile);
+      }
+      const homeJson = JSON.stringify(homeDir);
+      const pluginSource = GLOBAL_OPENCODE_PLUGIN.split('__CONTEXT_MD_HOME__').join(homeJson);
+      fs.mkdirSync(path.dirname(pluginFile), { recursive: true });
+      atomicWriteFile(pluginFile, pluginSource);
+      report.opencode = { agent: 'opencode', file: pluginFile };
+    } catch (err) {
+      report.opencode = { agent: 'opencode', error: String(err?.message || err) };
     }
-    const homeJson = JSON.stringify(homeDir);
-    const pluginSource = GLOBAL_OPENCODE_PLUGIN.split('__CONTEXT_MD_HOME__').join(homeJson);
-    fs.mkdirSync(path.dirname(pluginFile), { recursive: true });
-    atomicWriteFile(pluginFile, pluginSource);
-    report.opencode = { agent: 'opencode', file: pluginFile };
-  } catch (err) {
-    report.opencode = { agent: 'opencode', error: String(err?.message || err) };
   }
 
   return report;
@@ -546,9 +552,10 @@ export function manageGitignore(root) {
 
 // ---------- top-level flows ----------
 
-export function install(root) {
+export function install(root, { clients = null } = {}) {
   root = path.resolve(root);
-  const report = { root, contextCreated: false, instructionFiles: [], hooks: [], opencode: null };
+  const selected = new Set(clients ?? ['claude-code', 'codex', 'gemini-cli', 'cursor', 'opencode']);
+  const report = { root, contextCreated: false, instructionFiles: [], hooks: [], opencode: null, skipped: [] };
 
   const ensured = ensureContextFile(root);
   report.contextCreated = ensured.created;
@@ -560,11 +567,12 @@ export function install(root) {
     report.instructionFiles.push(injectInstructionBlock(path.join(root, rel)));
   }
 
-  for (const adapter of AGENT_ADAPTERS) {
+  for (const [id, adapter] of AGENT_ADAPTERS) {
+    if (!selected.has(id)) { report.skipped.push(id); continue; }
     try {
       report.hooks.push(adapter(root));
     } catch (err) {
-      report.hooks.push({ agent: adapter.name.replace(/^install/, '').toLowerCase(), error: String(err?.message || err) });
+      report.hooks.push({ agent: id, error: String(err?.message || err) });
     }
   }
 

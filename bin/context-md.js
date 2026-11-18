@@ -7,6 +7,8 @@ import process from 'node:process';
 import { install, uninstall, uninstallGlobal, installGlobal, verify } from '../src/install.js';
 import { refreshDeterministic, ensureContextFile, contextPath } from '../src/context-file.js';
 import { findRoot } from '../src/scan.js';
+import { detectAgents } from '../src/detect.js';
+import { printDetection, pickAgents, resolveClients } from '../src/picker.js';
 
 const VERSION = '0.1.0';
 
@@ -14,9 +16,10 @@ function usage() {
   console.log(`context-md v${VERSION} — live context.md for every AI agent
 
 Usage:
-  context-md install [dir]      Wire this repo to context-md (default: cwd / git root)
-  context-md install --global   Default for THIS machine: ~/.context-md runtime + global
-                                hooks — any project you open gets context.md automatically
+  context-md install [dir] [--all] [--clients x,y]
+                                Wire a repo (interactive picker on a TTY; flags/non-TTY default: all agents)
+  context-md install --global [--all] [--clients x,y]
+                                Machine-wide default: ~/.context-md runtime + global hooks
   context-md uninstall [dir]    Remove instruction blocks + hooks (keeps context.md)
   context-md uninstall --global Remove machine-wide default wiring + runtime
   context-md uninstall --remove-context [dir]   Also delete context.md
@@ -44,7 +47,7 @@ function flagValue(args, name) {
 function resolveTarget(args) {
   const filtered = [];
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--home') { i++; continue; } // skip flag + value
+    if (args[i] === '--home' || args[i] === '--clients') { i++; continue; } // skip flag + value
     filtered.push(args[i]);
   }
   const positional = filtered.filter((a) => !a.startsWith('-'));
@@ -90,7 +93,9 @@ function printReport(report) {
     for (const item of report.hooks) {
       console.log(`  ${item.error ? `FAILED: ${item.error}` : 'wired'}   ${item.agent}${item.file ? ` -> ${path.relative(report.root, item.file)}` : ''}`);
     }
+    if (report.skipped?.length) console.log(`skipped (not selected): ${report.skipped.join(', ')}`);
     console.log('\nDone. Agents now see context.md at session start. Commit context.md to share with your team.');
+    console.log('No API keys needed — hooks run locally; your agents use your existing subscriptions.');
     return;
   }
   for (const item of report.instructionFiles) console.log(`  block ${item.removed ? 'removed' : 'absent'}  ${item.file}`);
@@ -109,7 +114,9 @@ function printGlobalReport(report) {
     for (const item of report.hooks) {
       console.log(`  ${item.error ? `FAILED: ${item.error}` : 'wired'}   ${item.agent}`);
     }
-    console.log(`opencode         ${report.opencode?.error ? `FAILED: ${report.opencode.error}` : 'wired   global plugin'}`);
+    if (report.skipped?.length) console.log(`skipped (not selected): ${report.skipped.join(', ')}`);
+    console.log(`opencode         ${report.opencode?.error ? `FAILED: ${report.opencode.error}` : report.opencode?.skipped ? 'not selected' : 'wired   global plugin'}`);
+    console.log('No API keys needed — hooks run locally; your agents use your existing subscriptions.');
     console.log('\nGlobal default is ON. WARNING: this rewrites your USER-LEVEL agent configs');
     console.log('(~/.claude, ~/.codex, ~/.gemini, ~/.cursor, ~/.config/opencode) in every project.');
     console.log('Undo anytime with: context-md uninstall --global');
@@ -117,7 +124,8 @@ function printGlobalReport(report) {
   }
   for (const item of report.instructionFiles) console.log(`  block ${item.removed ? 'removed' : 'absent'}  ${item.file}`);
   for (const item of report.hooks) console.log(`  hook  ${item.removed ? 'removed' : 'absent'}  ${item.file ?? ''}`);
-  console.log(`opencode         ${report.opencode?.removed ? 'plugin removed' : 'plugin absent'}`);
+  if (report.skipped?.length) console.log(`skipped (not selected): ${report.skipped.join(', ')}`);
+  console.log(`opencode         ${report.opencode?.removed ? 'plugin removed' : report.opencode?.skipped ? 'not selected' : 'plugin absent'}`);
   console.log(`runtime          removed   ${path.join(report.home, '.context-md')}`);
 }
 
@@ -132,10 +140,30 @@ function readJsonFile(file) {
 const [command, ...rest] = process.argv.slice(2);
 const args = rest;
 
+// Interactive when possible; flags always win. Non-TTY defaults to all agents.
+async function chosenClients(args) {
+  const wantsAll = args.includes('--all');
+  const hasClientsFlag = args.some((a) => a === '--clients' || a.startsWith('--clients='));
+  const detected = detectAgents({});
+  const tty = Boolean(process.stdout.isTTY && process.stdin.isTTY);
+  if (wantsAll || hasClientsFlag || !tty) {
+    return resolveClients(args, detected);
+  }
+  printDetection(detected);
+  return pickAgents(detected);
+}
+
 switch (command) {
   case 'install':
-    if (args.includes('--global')) { safe(() => printGlobalReport(installGlobal({ home: globalHome(args) }))); break; }
-    safe(() => printReport(install(resolveTarget(args))));
+    if (args.includes('--global')) {
+      const clients = await chosenClients(args.filter((a) => a !== '--global'));
+      safe(() => printGlobalReport(installGlobal({ home: globalHome(args), clients })));
+      break;
+    }
+    {
+      const clients = await chosenClients(args);
+      safe(() => printReport(install(resolveTarget(args), { clients })));
+    }
     break;
   case 'uninstall':
     if (args.includes('--global')) { safe(() => printGlobalReport(uninstallGlobal({ home: globalHome(args) }))); break; }
