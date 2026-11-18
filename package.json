@@ -1,7 +1,7 @@
 {
   "name": "agent-context-md",
   "version": "0.1.0",
-  "description": "Live context.md for every AI agent.",
+  "description": "Live context.md for AI agents.",
   "type": "module",
   "bin": {
     "context-md": "bin/context-md.js"

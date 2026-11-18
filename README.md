@@ -1,17 +1,27 @@
 # context-md
 
-**Live `context.md` for every AI agent — one file — kept real-time by hooks.**
+**Live `context.md` for AI agents.**
 
-Install it once into any repository. After that, every AI coding agent that
-opens the repo starts with the complete, current project context — and hooks
-keep that context up to date after every single edit. No API keys, no server,
-no subscription changes: it is plain local machinery around the agents you
-already use.
+## TL;DR
 
-**Explicitly free to use:** the hooks are Node scripts; they call no model and
-need no key. Your agents run on your existing subscriptions.
+**What it is:** one file — `context.md` — holding everything your project is and
+everything that happens in it. Every AI agent you use reads it first.
 
----
+**How it works:** install once → your agents are wired with hooks that (1)
+inject the protocol each session, (2) **force the agent to read `context.md`
+before it can edit any file**, (3) append **every file edit** to the Change Log
+in real time, (4) **block ending the turn/session until `context.md` is
+updated**, (5) fail CI if it goes stale. Plain local hooks — no API keys, no
+server, free.
+
+**What's inside:** the `context.md` file + 5 hook agents (Claude Code, Codex,
+Gemini CLI, Cursor, opencode) + instruction files for 20+ agents (Copilot,
+Windsurf, Devin, Continue, Junie, Amazon Q, Cline, Roo, Kilo, Augment, Tabnine,
+Zed, Aider…) + interactive installer + `context-md doctor` health check +
+`context-md verify` CI gate + first-run backfill for existing repos +
+clean uninstall.
+
+## What this does
 
 ## The problem
 
