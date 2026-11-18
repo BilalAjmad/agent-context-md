@@ -1,4 +1,5 @@
 node_modules/
 *.bak-*
 .DS_Store
-.context/
+.context/session-state.json
+.context/.last-scan

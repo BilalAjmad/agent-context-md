@@ -61,6 +61,17 @@ test('install writes instruction blocks into agent instruction files', () => {
   }
 });
 
+test('install adds .context session files to .gitignore but keeps .context committable', () => {
+  const gitignore = fs.readFileSync(path.join(fixture, '.gitignore'), 'utf8');
+  assert.match(gitignore, /\.context\/session-state\.json/);
+  assert.match(gitignore, /\.context\/\.last-scan/);
+  assert.ok(!gitignore.split('\n').some((l) => l.trim() === '.context/'), '.context/ itself must not be ignored');
+  // idempotent: second install does not duplicate
+  run(['install', fixture]);
+  const again = fs.readFileSync(path.join(fixture, '.gitignore'), 'utf8');
+  assert.equal((again.match(/\.context\/session-state\.json/g) || []).length, 1);
+});
+
 test('install is idempotent — blocks and hooks do not duplicate', () => {
   run(['install', fixture]);
   const agents = fs.readFileSync(path.join(fixture, 'AGENTS.md'), 'utf8');
@@ -149,6 +160,72 @@ test('stop gate outputs gemini and cursor shapes', () => {
   assert.equal(JSON.parse(outGemini).decision, 'deny');
   const outCursor = execFileSync(process.execPath, [stopCheck, '--agent=cursor'], { cwd: fixture, input: '{}', encoding: 'utf8' });
   assert.match(JSON.parse(outCursor).followup_message, /context\.md/);
+});
+
+test('global install wires a fake HOME and auto-onboards a fresh project', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'context-md-home-'));
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'context-md-fresh-'));
+  try {
+    execSync('git init -b main', { cwd: proj, stdio: 'pipe' });
+    fs.writeFileSync(path.join(proj, 'package.json'), '{"name":"fresh"}');
+    run(['install', '--global', '--home', home]);
+    assert.ok(fs.existsSync(path.join(home, '.context-md', 'hooks', 'session-start.js')), 'global runtime installed');
+    const settings = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'));
+    assert.ok(JSON.stringify(settings).includes('.context-md/hooks/'), 'global claude hooks wired');
+
+    // Simulate a SessionStart in the fresh project: context.md must auto-create
+    const start = path.join(home, '.context-md', 'hooks', 'session-start.js');
+    const out = execFileSync(process.execPath, [start], { cwd: proj, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    assert.match(JSON.parse(out).hookSpecificOutput.additionalContext, /FIRST-RUN BACKFILL/);
+    assert.ok(fs.existsSync(path.join(proj, 'context.md')), 'context.md auto-created for fresh project');
+
+    // Agent edits a file, then tries to stop → gate must block (backfill pending)
+    const post = path.join(home, '.context-md', 'hooks', 'post-tool.js');
+    execFileSync(process.execPath, [post], { cwd: proj, input: JSON.stringify({ tool_input: { file_path: 'package.json' } }), stdio: ['pipe', 'pipe', 'pipe'] });
+    const stop = path.join(home, '.context-md', 'hooks', 'stop-check.js');
+    const blocked = execFileSync(process.execPath, [stop, '--agent=claude'], { cwd: proj, input: '{}', encoding: 'utf8' });
+    assert.equal(JSON.parse(blocked).decision, 'block');
+
+    // Agent does the backfill: edits context.md → gate passes
+    execFileSync(process.execPath, [post], { cwd: proj, input: JSON.stringify({ tool_input: { file_path: 'context.md' } }), stdio: ['pipe', 'pipe', 'pipe'] });
+    const after = execFileSync(process.execPath, [stop, '--agent=claude'], { cwd: proj, input: '{}', encoding: 'utf8' });
+    assert.equal(after.trim(), '{}');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(proj, { recursive: true, force: true });
+  }
+});
+
+test('global hooks defer when the repo has local wiring (no duplicate logging)', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'context-md-home-'));
+  const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'context-md-local-'));
+  try {
+    execSync('git init -b main', { cwd: proj, stdio: 'pipe' });
+    run(['install', '--global', '--home', home]);
+    run(['install', proj]);
+    const start = path.join(home, '.context-md', 'hooks', 'session-start.js');
+    const out = execFileSync(process.execPath, [start], { cwd: proj, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    assert.equal(out, '{}', 'global must defer to local runtime in wired repos');
+    const ctx = fs.readFileSync(path.join(proj, 'context.md'), 'utf8');
+    assert.equal((ctx.match(/session started/g) || []).length, 0, 'global wrote no changelog line');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(proj, { recursive: true, force: true });
+  }
+});
+
+test('global uninstall removes machine-wide wiring', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'context-md-home-'));
+  try {
+    run(['install', '--global', '--home', home]);
+    assert.ok(fs.existsSync(path.join(home, '.context-md')));
+    run(['uninstall', '--global', '--home', home]);
+    const settings = JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8'));
+    assert.ok(!JSON.stringify(settings).includes('.context-md/hooks/'), 'global hooks removed');
+    assert.ok(!fs.existsSync(path.join(home, '.context-md')), 'runtime removed');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('uninstall removes blocks and hooks but keeps context.md', () => {

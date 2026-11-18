@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { install, uninstall, verify } from '../src/install.js';
+import { install, uninstall, uninstallGlobal, installGlobal, verify } from '../src/install.js';
 import { refreshDeterministic, ensureContextFile, contextPath } from '../src/context-file.js';
 import { findRoot } from '../src/scan.js';
 
@@ -14,25 +14,45 @@ function usage() {
 
 Usage:
   context-md install [dir]      Wire this repo to context-md (default: cwd / git root)
+  context-md install --global   Default for THIS machine: ~/.context-md runtime + global
+                                hooks — any project you open gets context.md automatically
   context-md uninstall [dir]    Remove instruction blocks + hooks (keeps context.md)
+  context-md uninstall --global Remove machine-wide default wiring + runtime
   context-md uninstall --remove-context [dir]   Also delete context.md
+  context-md backfill [dir]     Regenerate context.md + print the backfill protocol
   context-md refresh [dir]      Regenerate snapshot/structure sections now
   context-md verify [dir]       Exit 1 if context.md is stale vs git changes (for CI)
   context-md status [dir]       Print install status for this repo
   context-md --version | --help
 
 After install, every supported AI agent will read context.md before work and
-hooks keep its change log real-time. Commit context.md to share it with your team.`);
+hooks keep its change log real-time. Commit context.md to share it with your team.
+Repos wired before backfill existed get ONE backfill pass on their next session.`);
+}
+
+function flagValue(args, name) {
+  const i = args.indexOf(name);
+  return i !== -1 && args[i + 1] ? args[i + 1] : null;
 }
 
 function resolveTarget(args) {
-  const positional = args.filter((a) => !a.startsWith('-'));
+  const filtered = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--home') { i++; continue; } // skip flag + value
+    filtered.push(args[i]);
+  }
+  const positional = filtered.filter((a) => !a.startsWith('-'));
   const dir = positional[0] ? path.resolve(positional[0]) : findRoot(process.cwd());
   if (!fs.existsSync(dir)) {
     console.error(`error: directory not found: ${dir}`);
     process.exit(2);
   }
   return dir;
+}
+
+function globalHome(args) {
+  const home = flagValue(args, '--home');
+  return home ? path.resolve(home) : undefined;
 }
 
 function printReport(report) {
@@ -54,16 +74,51 @@ function printReport(report) {
   console.log(`context.md        ${report.contextKept ? 'kept (use --remove-context to delete)' : 'removed'}`);
 }
 
+function printGlobalReport(report) {
+  if (report.runtime) {
+    console.log(`runtime          ${path.join(report.home, '.context-md')} (lib + hooks + opencode plugin)`);
+    console.log(`instruction files:`);
+    for (const item of report.instructionFiles) {
+      console.log(`  ${item.action.padEnd(9)} ${path.join(report.home, item.file ?? '')}`);
+    }
+    console.log(`agent hooks (global):`);
+    for (const item of report.hooks) {
+      console.log(`  ${item.error ? `FAILED: ${item.error}` : 'wired'}   ${item.agent}`);
+    }
+    console.log(`opencode         ${report.opencode?.error ? `FAILED: ${report.opencode.error}` : 'wired   global plugin'}`);
+    console.log('\nGlobal default is ON. Open ANY project with these agents and context.md appears automatically.');
+    return;
+  }
+  for (const item of report.instructionFiles) console.log(`  block ${item.removed ? 'removed' : 'absent'}  ${item.file}`);
+  for (const item of report.hooks) console.log(`  hook  ${item.removed ? 'removed' : 'absent'}  ${item.file ?? ''}`);
+  console.log(`opencode         ${report.opencode?.removed ? 'plugin removed' : 'plugin absent'}`);
+  console.log(`runtime          removed   ${path.join(report.home, '.context-md')}`);
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const args = rest;
 
 switch (command) {
   case 'install':
+    if (args.includes('--global')) { printGlobalReport(installGlobal({ home: globalHome(args) })); break; }
     printReport(install(resolveTarget(args)));
     break;
   case 'uninstall':
+    if (args.includes('--global')) { printGlobalReport(uninstallGlobal({ home: globalHome(args) })); break; }
     printReport(uninstall(resolveTarget(args), { removeContext: args.includes('--remove-context') }));
     break;
+  case 'backfill': {
+    const root = resolveTarget(args);
+    ensureContextFile(root);
+    refreshDeterministic(root);
+    console.log('Backfill protocol for the AI agent working in this repo:');
+    console.log('1. Read README* and docs/ if any, the manifests (package.json / pyproject.toml / go.mod / Cargo.toml / pom.xml), and the 2-4 most important source files.');
+    console.log('2. Run `git log --oneline -50` to understand the arc of the project.');
+    console.log('3. Rewrite context.md Purpose and Key Knowledge with the REAL project purpose, stack decisions, conventions and gotchas. No placeholders.');
+    console.log('4. Create an empty file .context/.backfill-done (mkdir -p .context first if needed).');
+    console.log('5. context.md refreshed at:', contextPath(root));
+    break;
+  }
   case 'refresh': {
     const root = resolveTarget(args);
     ensureContextFile(root);

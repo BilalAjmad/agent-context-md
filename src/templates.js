@@ -74,6 +74,48 @@ try {
 export default { ...v2, server: v1 };
 `;
 
+export const GLOBAL_OPENCODE_PLUGIN = `// context-md — opencode GLOBAL plugin (v1 + v2 compatible)
+// Wires every unconfigured project you open in opencode: ensures context.md,
+// logs edits, enforces the stop gate. Defers to a repo's local .context/ runtime.
+import path from 'node:path';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
+
+const RUNTIME = path.join(os.homedir(), '.context-md', 'hooks');
+
+function run(hook, input) {
+  try {
+    execFileSync(process.execPath, [path.join(RUNTIME, hook)], {
+      input: JSON.stringify(input ?? {}),
+      stdio: ['pipe', 'ignore', 'ignore'],
+      timeout: 10000,
+    });
+  } catch {
+    // Hooks are best-effort: never break the agent loop.
+  }
+}
+
+const v1 = async () => ({
+  'session.created': async () => run('session-start.js'),
+  'tool.execute.after': async (input) => run('post-tool.js', input),
+});
+
+let v2 = null;
+try {
+  const mod = await import('@opencode/plugin');
+  v2 = mod.Plugin.define({
+    id: 'context-md',
+    setup(ctx) {
+      ctx.tool.hook('execute.after', () => run('post-tool.js'));
+    },
+  });
+} catch {
+  v2 = { id: 'context-md' }; // @opencode/plugin unavailable — rely on v1 export
+}
+
+export default { ...v2, server: v1 };
+`;
+
 export const SESSION_START_HOOK = `#!/usr/bin/env node
 // context-md session-start hook.
 // Ensures context.md exists, refreshes the auto-managed sections, resets the
@@ -83,12 +125,37 @@ import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, '..', '..');
+// Both layouts keep lib/ beside hooks/: local <repo>/.context/lib, global ~/.context-md/lib.
+const RUNTIME_LIB = path.resolve(__dirname, '..', 'lib', 'context-file.js');
+const GRANDPARENT = path.basename(path.resolve(__dirname, '..'));
+const HOOK_IS_GLOBAL = GRANDPARENT !== '.context';
 
-const lib = await import(pathToFileURL(path.join(root, '.context', 'lib', 'context-file.js')).href);
-const { refreshDeterministic, appendChangeLog, ensureContextFile } = lib;
+let lib = null;
+try {
+  lib = await import(pathToFileURL(RUNTIME_LIB).href);
+} catch {
+  process.stdout.write(JSON.stringify({}));
+  process.exit(0);
+}
+const { refreshDeterministic, appendChangeLog, ensureContextFile, findRoot } = lib;
+
+// Root = project containing cwd (works for repo subdirs and for the global
+// runtime); falls back to the repo root derived from hook location.
+const root = (() => { try { return findRoot(process.cwd()) || path.resolve(__dirname, '..', '..'); } catch { return path.resolve(__dirname, '..', '..'); } })();
+
+// Global runtime defers to the repo's own local runtime when present, and
+// activates only in project-like folders (.git or a known manifest).
+const MANIFESTS = ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'Gemfile', 'composer.json', 'requirements.txt', 'setup.py', 'Dockerfile', '.git'];
+const projectLike = MANIFESTS.some((m) => fs.existsSync(path.join(root, m)));
+if (HOOK_IS_GLOBAL && (fs.existsSync(path.join(root, '.context', 'lib', 'context-file.js')) || !projectLike)) {
+  process.stdout.write(JSON.stringify({}));
+  process.exit(0);
+}
+
+const backfillDone = (() => { try { return fs.existsSync(path.join(root, '.context', '.backfill-done')); } catch { return false; } })();
 
 try {
+  ensureContextFile(root);
   refreshDeterministic(root);
   appendChangeLog(root, 'session started — snapshot refreshed');
 } catch (err) {
@@ -96,15 +163,18 @@ try {
   try { ensureContextFile(root); } catch {}
 }
 
-// Reset the per-session edit tracker.
 try {
-  fs.writeFileSync(path.join(root, '.context', 'session-state.json'), JSON.stringify({ edits: 0, pendingEdit: false, lastEdit: null }), 'utf8');
+  fs.mkdirSync(path.join(root, '.context'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.context', 'session-state.json'), JSON.stringify({ edits: 0, pendingEdit: false, lastEdit: null, backfillPending: !backfillDone }), 'utf8');
 } catch {}
+
+const taskContext = 'MANDATORY (context-md): before ANY work in this repo, read the FULL context.md in the repo root. It is the live source of truth for what this project is, its structure, key decisions and current focus. After meaningful decisions/changes, UPDATE context.md (Purpose / Key Knowledge / Current Focus). The stop gate will block session end if files changed and context.md was not updated. Do not trust prior memory over the file.';
+const firstRun = 'FIRST-RUN BACKFILL (context-md): this project has never been backfilled. Before ANY other task, do this and nothing else: (1) read README* and docs/ if any, the manifests (package.json / pyproject.toml / go.mod / Cargo.toml / pom.xml), and the 2-4 most important source files; (2) run git log --oneline -50 to understand the arc of the project; (3) rewrite context.md Purpose and Key Knowledge with the REAL project purpose, stack decisions, conventions and gotchas (NO placeholders, NO invented facts); (4) create an empty file .context/.backfill-done (mkdir -p .context first if needed); (5) tell the user the backfill is done. While backfillPending is set, finishing any file edits without doing this will be blocked at session end.';
 
 const payload = {
   hookSpecificOutput: {
     hookEventName: 'SessionStart',
-    additionalContext: 'MANDATORY (context-md): before ANY work in this repo, read the FULL context.md in the repo root. It is the live source of truth for what this project is, its structure, key decisions and current focus. After meaningful decisions/changes, UPDATE context.md (Purpose / Key Knowledge / Current Focus). The stop gate will block session end if files changed and context.md was not updated. Do not trust prior memory over the file.',
+    additionalContext: backfillDone ? taskContext : taskContext + '\\n\\n' + firstRun,
   },
 };
 process.stdout.write(JSON.stringify(payload));
@@ -120,8 +190,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, '..', '..');
+const GRANDPARENT = path.basename(path.resolve(__dirname, '..'));
+const HOOK_IS_GLOBAL = GRANDPARENT !== '.context';
+const RUNTIME_LIB = path.resolve(__dirname, '..', 'lib', 'context-file.js');
 const agentFlag = (process.argv.find((a) => a.startsWith('--agent=')) || '--agent=claude').split('=')[1];
+
+import { pathToFileURL } from 'node:url';
+let root = null;
+try {
+  const lib = await import(pathToFileURL(RUNTIME_LIB).href);
+  try { root = lib.findRoot(process.cwd()); } catch { root = null; }
+  if (HOOK_IS_GLOBAL && root && fs.existsSync(path.join(root, '.context', 'lib', 'context-file.js'))) {
+    process.stdout.write('{}');
+    process.exit(0);
+  }
+} catch { root = null; }
+if (!root) root = path.resolve(__dirname, '..', '..');
 
 let raw = '';
 try { raw = fs.readFileSync(0, 'utf8'); } catch { /* no stdin */ }
@@ -131,7 +215,7 @@ try { input = JSON.parse(raw || '{}'); } catch { input = {}; }
 // Guard against infinite loops: if this stop was already a hook retry, let it pass.
 const looped = input.stop_hook_active === true || (typeof input.loop_count === 'number' && input.loop_count >= 2);
 
-let state = { pendingEdit: false, edits: 0 };
+let state = { pendingEdit: false, edits: 0, backfillPending: false };
 try { state = { ...state, ...JSON.parse(fs.readFileSync(path.join(root, '.context', 'session-state.json'), 'utf8')) }; } catch {}
 
 const allow = () => {
@@ -139,9 +223,13 @@ const allow = () => {
   process.exit(0);
 };
 
-if (looped || !state.pendingEdit) allow();
+const needsContextUpdate = state.pendingEdit;
+const needsBackfill = state.backfillPending && state.edits > 0;
+if (looped || (!needsContextUpdate && !needsBackfill)) allow();
 
-const reason = 'context-md STOP GATE: files changed this session but context.md was not updated. Update context.md NOW — Current Focus / Key Knowledge / Purpose — then finish. Do not stop before the update.';
+const reason = needsBackfill && !needsContextUpdate
+  ? 'context-md STOP GATE: this project has never been backfilled and files were edited. Do the FIRST-RUN BACKFILL now: read README/manifests/key sources and git log --oneline -50, rewrite context.md Purpose + Key Knowledge with real facts, create .context/.backfill-done, then finish.'
+  : 'context-md STOP GATE: files changed this session but context.md was not updated. Update context.md NOW — Current Focus / Key Knowledge / Purpose — then finish. Do not stop before the update.';
 if (agentFlag === 'gemini') {
   process.stdout.write(JSON.stringify({ decision: 'deny', reason }));
 } else if (agentFlag === 'cursor') {
@@ -162,7 +250,9 @@ import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, '..', '..');
+const GRANDPARENT = path.basename(path.resolve(__dirname, '..'));
+const HOOK_IS_GLOBAL = GRANDPARENT !== '.context';
+const RUNTIME_LIB = path.resolve(__dirname, '..', 'lib', 'context-file.js');
 
 let raw = '';
 try {
@@ -172,9 +262,16 @@ try {
 let input = {};
 try { input = JSON.parse(raw || '{}'); } catch { input = {}; }
 
-const libPath = path.join(root, '.context', 'lib', 'context-file.js');
 let lib = null;
-try { lib = await import(pathToFileURL(libPath).href); } catch { process.stdout.write('{}'); process.exit(0); }
+try { lib = await import(pathToFileURL(RUNTIME_LIB).href); } catch { process.stdout.write('{}'); process.exit(0); }
+
+const root = (() => { try { return lib.findRoot(process.cwd()) || path.resolve(__dirname, '..', '..'); } catch { return path.resolve(__dirname, '..', '..'); } })();
+
+// Global runtime defers to a repo's local runtime when present.
+if (HOOK_IS_GLOBAL && fs.existsSync(path.join(root, '.context', 'lib', 'context-file.js'))) {
+  process.stdout.write('{}');
+  process.exit(0);
+}
 
 try {
   const changed = lib.extractChangedFile(input.tool_input ?? input);
@@ -189,6 +286,7 @@ try {
   const touchesContext = changed ? /(^|[\\/])context\.md$/i.test(changed) : false;
   if (touchesContext) {
     state.pendingEdit = false;
+    state.backfillPending = false;
   } else {
     state.edits = (state.edits || 0) + 1;
     state.pendingEdit = true;

@@ -2,10 +2,11 @@
 // Every mutation is idempotent (marked blocks / identifiable hook entries) and
 // JSON configs are backed up before modification.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { instructionBlock, INSTRUCTION_MARKER, INSTRUCTION_END, OPENCODE_PLUGIN, SESSION_START_HOOK, POST_TOOL_HOOK, STOP_HOOK } from './templates.js';
+import { instructionBlock, INSTRUCTION_MARKER, INSTRUCTION_END, OPENCODE_PLUGIN, GLOBAL_OPENCODE_PLUGIN, SESSION_START_HOOK, POST_TOOL_HOOK, STOP_HOOK } from './templates.js';
 import { ensureContextFile, refreshDeterministic, contextPath } from './context-file.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,7 +41,11 @@ const FRONTMATTER = {
   '.cursor/rules/context-md.mdc': CURSOR_MDC,
 };
 
-const HOOK_TAG = '.context/hooks/';
+const HOOK_TAGS = ['.context/hooks/', '.context-md/hooks/'];
+function isOursJson(value) {
+  const json = typeof value === 'string' ? value : JSON.stringify(value);
+  return HOOK_TAGS.some((tag) => json.includes(tag));
+}
 
 function fsExists(p) { try { fs.accessSync(p); return true; } catch { return false; } }
 
@@ -110,9 +115,11 @@ export function removeInstructionBlocks(root, files = INSTRUCTION_FILES) {
 
 // ---------- hooks + vendored lib ----------
 
-export function copyRuntime(root) {
-  const destLib = path.join(root, '.context', 'lib');
-  const destHooks = path.join(root, '.context', 'hooks');
+// Write the runtime (lib + hooks + package.json) into <dir>.
+// Local install uses <repo>/.context, global default uses <home>/.context-md.
+export function copyRuntimeTo(destDir) {
+  const destLib = path.join(destDir, 'lib');
+  const destHooks = path.join(destDir, 'hooks');
   fs.mkdirSync(destLib, { recursive: true });
   fs.mkdirSync(destHooks, { recursive: true });
 
@@ -122,8 +129,14 @@ export function copyRuntime(root) {
   fs.writeFileSync(path.join(destHooks, 'post-tool.js'), POST_TOOL_HOOK, 'utf8');
   fs.writeFileSync(path.join(destHooks, 'stop-check.js'), STOP_HOOK, 'utf8');
   // ESM modules even when the target repo has no "type": "module".
-  fs.writeFileSync(path.join(root, '.context', 'package.json'), JSON.stringify({ type: 'module' }, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(path.join(destDir, 'package.json'), JSON.stringify({ type: 'module' }, null, 2) + '\n', 'utf8');
   return { lib: destLib, hooks: destHooks };
+}
+
+export function copyRuntime(root) {
+  const destDir = path.join(root, '.context');
+  const { lib, hooks } = copyRuntimeTo(destDir);
+  return { lib, hooks };
 }
 
 // ---------- JSON config merging ----------
@@ -164,24 +177,46 @@ function dedupContextGroups(groups) {
   // stale one behind. Keep only the newest (last) context-md group per event.
   let lastContext = -1;
   for (let i = 0; i < groups.length; i++) {
-    if (JSON.stringify(groups[i]).includes(HOOK_TAG)) lastContext = i;
+    if (isOursJson(groups[i])) lastContext = i;
   }
-  return groups.filter((g, i) => !JSON.stringify(g).includes(HOOK_TAG) || i === lastContext);
+  return groups.filter((g, i) => !isOursJson(g) || i === lastContext);
 }
 
-function hookCommand(root, script) {
-  // Forward slashes: valid on every shell/node, and keeps the
-  // ".context/hooks/" marker consistent across platforms.
-  return `node "${path.join(root, '.context', 'hooks', script).replace(/\\/g, '/')}"`;
+function hookCommandAt(hooksDir, script) {
+  // Forward slashes everywhere: valid on every shell/node, and keeps the
+  // runtime marker consistent across platforms.
+  return `node "${path.join(hooksDir, script).replace(/\\/g, '/')}"`;
+}
+
+// Local installs must produce COMMITTABLE, machine-independent hook commands,
+// so teammates on other machines can clone and use them. Each agent gets its
+// documented project-root expansion. Global installs keep absolute paths.
+function localCommand(agent, script) {
+  const base = {
+    claude: '${CLAUDE_PROJECT_DIR}/.context/hooks/',
+    codex: '$(git rev-parse --show-toplevel)/.context/hooks/',
+    gemini: '$GEMINI_PROJECT_DIR/.context/hooks/',
+    cursor: './.context/hooks/',
+  }[agent];
+  return `node "${base}${script}"`;
+}
+
+function agentCommand(agent, script, opts = {}) {
+  return opts.hooksDir ? hookCommandAt(opts.hooksDir, script) : localCommand(agent, script);
+}
+
+function stopCommand(root, agent, opts = {}) {
+  const base = agentCommand(agent, 'stop-check.js', opts);
+  return `${base} --agent=${agent}`;
 }
 
 // Claude Code: .claude/settings.json
-export function installClaude(root) {
+export function installClaude(root, opts = {}) {
   const file = path.join(root, '.claude', 'settings.json');
   const settings = readJson(file) ?? {};
-  const cmd = hookCommand(root, 'post-tool.js');
-  const start = hookCommand(root, 'session-start.js');
-  const stop = `node "${path.join(root, '.context', 'hooks', 'stop-check.js').replace(/\\/g, '/')}" --agent=claude`;
+  const cmd = agentCommand('claude', 'post-tool.js', opts);
+  const start = agentCommand('claude', 'session-start.js', opts);
+  const stop = stopCommand(root, 'claude', opts);
   settings.hooks = mergeHooks(settings.hooks, {
     SessionStart: [
       { matcher: 'startup|resume|clear|compact', hooks: [{ type: 'command', command: start, timeout: 15 }] },
@@ -198,16 +233,16 @@ export function installClaude(root) {
 }
 
 // Codex: .codex/hooks.json (separate file, keeps config.toml untouched)
-export function installCodex(root) {
+export function installCodex(root, opts = {}) {
   const file = path.join(root, '.codex', 'hooks.json');
   const config = readJson(file) ?? { description: 'context-md hooks', hooks: {} };
-  const stop = `node "${path.join(root, '.context', 'hooks', 'stop-check.js').replace(/\\/g, '/')}" --agent=codex`;
+  const stop = stopCommand(root, 'codex', opts);
   config.hooks = mergeHooks(config.hooks, {
     SessionStart: [
-      { matcher: 'startup|resume|clear|compact|fork', hooks: [{ type: 'command', command: hookCommand(root, 'session-start.js'), timeout: 15 }] },
+      { matcher: 'startup|resume|clear|compact|fork', hooks: [{ type: 'command', command: agentCommand('codex', 'session-start.js', opts), timeout: 15 }] },
     ],
     PostToolUse: [
-      { matcher: 'Edit|Write|apply_patch', hooks: [{ type: 'command', command: hookCommand(root, 'post-tool.js'), timeout: 15 }] },
+      { matcher: 'Edit|Write|apply_patch', hooks: [{ type: 'command', command: agentCommand('codex', 'post-tool.js', opts), timeout: 15 }] },
     ],
     Stop: [
       { hooks: [{ type: 'command', command: stop, timeout: 15 }] },
@@ -218,12 +253,12 @@ export function installCodex(root) {
 }
 
 // Gemini CLI: .gemini/settings.json — hooks key merged into project settings
-export function installGemini(root) {
+export function installGemini(root, opts = {}) {
   const file = path.join(root, '.gemini', 'settings.json');
   const settings = readJson(file) ?? {};
-  const cmd = hookCommand(root, 'post-tool.js');
-  const start = hookCommand(root, 'session-start.js');
-  const stop = `node "${path.join(root, '.context', 'hooks', 'stop-check.js').replace(/\\/g, '/')}" --agent=gemini`;
+  const cmd = agentCommand('gemini', 'post-tool.js', opts);
+  const start = agentCommand('gemini', 'session-start.js', opts);
+  const stop = stopCommand(root, 'gemini', opts);
   settings.hooks = mergeHooks(settings.hooks, {
     SessionStart: [
       { matcher: '*', hooks: [{ name: 'context-md', type: 'command', command: start, timeout: 15000, description: 'Refresh context.md at session start' }] },
@@ -240,13 +275,13 @@ export function installGemini(root) {
 }
 
 // Cursor: .cursor/hooks.json — project hooks, committed, cloud agents included
-export function installCursor(root) {
+export function installCursor(root, opts = {}) {
   const file = path.join(root, '.cursor', 'hooks.json');
   const config = readJson(file) ?? { version: 1, hooks: {} };
-  const cmd = hookCommand(root, 'post-tool.js');
-  const start = hookCommand(root, 'session-start.js');
+  const cmd = agentCommand('cursor', 'post-tool.js', opts);
+  const start = agentCommand('cursor', 'session-start.js', opts);
   config.version = 1;
-  const stop = `node "${path.join(root, '.context', 'hooks', 'stop-check.js').replace(/\\/g, '/')}" --agent=cursor`;
+  const stop = stopCommand(root, 'cursor', opts);
   config.hooks = mergeHooks(config.hooks, {
     sessionStart: [{ command: start, timeout: 15 }],
     postToolUse: [{ command: cmd, timeout: 15, matcher: 'Write|Edit|Shell' }],
@@ -272,13 +307,13 @@ export const AGENT_ADAPTERS = [
   installOpencode,
 ];
 
-// Remove only context-md hook entries (identified by ".context/hooks/").
+// Remove only context-md hook entries (identified by our runtime path tags).
 function unmergeHooks(existing) {
   if (!existing || typeof existing !== 'object') return {};
   const hooks = {};
   for (const [event, groups] of Object.entries(existing)) {
     if (!Array.isArray(groups)) { hooks[event] = groups; continue; }
-    const kept = groups.filter((g) => !JSON.stringify(g).includes(HOOK_TAG));
+    const kept = groups.filter((g) => !isOursJson(g));
     if (kept.length) hooks[event] = kept;
   }
   return hooks;
@@ -309,6 +344,66 @@ export function uninstallHooks(root) {
   return results;
 }
 
+// ---------- global "default everywhere" install ----------
+
+const GLOBAL_INSTRUCTION_FILES = [
+  '.claude/CLAUDE.md',
+  '.codex/AGENTS.md',
+  '.gemini/GEMINI.md',
+  '.cursor/AGENTS.md',
+  '.config/opencode/AGENTS.md',
+];
+
+// Wires the global agent configs (user-level) + a standalone runtime at
+// <home>/.context-md. After this, any project you open with a supported agent
+// gets context.md automatically — the repo needs no manual install.
+export function installGlobal({ home } = {}) {
+  const homeDir = path.resolve(home || os.homedir());
+  const runtimeDir = path.join(homeDir, '.context-md');
+  const hooksDir = path.join(runtimeDir, 'hooks');
+  const report = { home: homeDir, runtime: null, instructionFiles: [], hooks: [], opencode: null };
+
+  report.runtime = copyRuntimeTo(runtimeDir);
+
+  for (const rel of GLOBAL_INSTRUCTION_FILES) {
+    report.instructionFiles.push(injectInstructionBlock(path.join(homeDir, rel)));
+  }
+
+  const opts = { hooksDir };
+  for (const adapter of [installClaude, installCodex, installGemini, installCursor]) {
+    try {
+      report.hooks.push(adapter(homeDir, opts));
+    } catch (err) {
+      report.hooks.push({ agent: adapter.name.replace(/^install/, '').toLowerCase(), error: String(err?.message || err) });
+    }
+  }
+
+  const pluginFile = path.join(homeDir, '.config', 'opencode', 'plugins', 'context-md.js');
+  try {
+    fs.mkdirSync(path.dirname(pluginFile), { recursive: true });
+    fs.writeFileSync(pluginFile, GLOBAL_OPENCODE_PLUGIN, 'utf8');
+    report.opencode = { agent: 'opencode', file: pluginFile };
+  } catch (err) {
+    report.opencode = { agent: 'opencode', error: String(err?.message || err) };
+  }
+
+  return report;
+}
+
+export function uninstallGlobal({ home } = {}) {
+  const homeDir = path.resolve(home || os.homedir());
+  const report = { home: homeDir, instructionFiles: [], hooks: [], opencode: null, runtimeKept: false };
+
+  for (const rel of GLOBAL_INSTRUCTION_FILES) {
+    report.instructionFiles.push({ file: rel, ...removeMarkedBlock(path.join(homeDir, rel)) });
+  }
+  report.hooks = uninstallHooks(homeDir); // matches .context-md/hooks/ tags too
+  const pluginFile = path.join(homeDir, '.config', 'opencode', 'plugins', 'context-md.js');
+  if (fsExists(pluginFile)) { fs.unlinkSync(pluginFile); report.opencode = { removed: true }; } else report.opencode = { removed: false };
+  try { fs.rmSync(path.join(homeDir, '.context-md'), { recursive: true, force: true }); } catch {}
+  return report;
+}
+
 export function uninstallRuntime(root) {
   for (const rel of [
     '.context/hooks/session-start.js',
@@ -327,6 +422,26 @@ export function uninstallRuntime(root) {
   }
 }
 
+// ---------- .gitignore ----------
+
+const GITIGNORE_LINES = [
+  '.context/session-state.json',
+  '.context/.last-scan',
+];
+
+// Target repos commit .context/ (hooks must travel with the repo) but not
+// per-session state. Append our ignore lines idempotently.
+export function manageGitignore(root) {
+  const file = path.join(root, '.gitignore');
+  let content = '';
+  if (fsExists(file)) content = fs.readFileSync(file, 'utf8');
+  const missing = GITIGNORE_LINES.filter((line) => !content.split('\n').map((l) => l.trim()).includes(line));
+  if (!missing.length) return { file, added: [] };
+  const block = (content && !content.endsWith('\n') ? '\n' : '') + '# context-md\n' + missing.join('\n') + '\n';
+  fs.writeFileSync(file, content + block, 'utf8');
+  return { file, added: missing };
+}
+
 // ---------- top-level flows ----------
 
 export function install(root) {
@@ -337,6 +452,7 @@ export function install(root) {
   report.contextCreated = ensured.created;
 
   copyRuntime(root);
+  manageGitignore(root);
 
   for (const rel of INSTRUCTION_FILES) {
     report.instructionFiles.push(injectInstructionBlock(path.join(root, rel)));
