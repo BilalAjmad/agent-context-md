@@ -1,7 +1,7 @@
 {
   "name": "agent-context-md",
   "version": "0.1.0",
-  "description": "context-md wires your repo to one live file every AI agent reads first: context.md, the ever-current description of your project. Install once: agents read it before working, edits are blocked until then, every change is logged in real time, and the turn cannot end until it is updated.",
+  "description": "context.md is your project's live brain — what it is and everything that changed, in one file every AI agent reads first. Install once; hooks log every edit, force the agent to read it before working, and block the session until it is updated.",
   "type": "module",
   "bin": {
     "context-md": "bin/context-md.js"
