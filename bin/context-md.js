@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // context-md — live context.md for every AI agent, kept current via hooks.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { install, uninstall, uninstallGlobal, installGlobal, verify } from '../src/install.js';
@@ -95,6 +96,14 @@ function printGlobalReport(report) {
   console.log(`runtime          removed   ${path.join(report.home, '.context-md')}`);
 }
 
+function readJsonFile(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+  } catch {
+    return null;
+  }
+}
+
 const [command, ...rest] = process.argv.slice(2);
 const args = rest;
 
@@ -138,9 +147,17 @@ switch (command) {
     const exists = fs.existsSync(contextPath(root));
     const hooks = ['.claude/settings.json', '.codex/hooks.json', '.gemini/settings.json', '.cursor/hooks.json', '.opencode/plugins/context-md.js']
       .map((rel) => [rel, fs.existsSync(path.join(root, rel))]);
+    const homeDir = os.homedir();
+    let globalRuntime = fs.existsSync(path.join(homeDir, '.context-md', 'hooks', 'session-start.js'));
+    let globalHook = false;
+    try {
+      globalHook = JSON.stringify(readJsonFile(path.join(homeDir, '.claude', 'settings.json')) ?? {}).includes('.context-md/hooks/');
+    } catch { /* unreadable */ }
     console.log(`root:       ${root}`);
     console.log(`context.md: ${exists ? 'present' : 'MISSING'}`);
     for (const [rel, ok] of hooks) console.log(`${ok ? 'wired  ' : 'missing'} ${rel}`);
+    console.log(`global:     ${globalRuntime ? 'runtime present (~/.context-md)' : 'runtime absent'} · ${globalHook ? 'global hooks wired' : 'global hooks not wired'}`);
+    console.log('global off/on: `context-md uninstall --global` / `context-md install --global`');
     process.exit(exists ? 0 : 1);
     break;
   }

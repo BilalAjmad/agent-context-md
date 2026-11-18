@@ -47,10 +47,11 @@ Zero-dependency Node CLI (`context-md`) that wires **any repository** to live `c
 
 ## Current Focus / Next Steps
 
-- Ship v0.1.0 to GitHub (needs the maintainer's remote).
-- Wire the repo itself (done — dogfooding, `.context/` committed).
-- Known gap: opencode has no verified turn-end hook, so the stop gate is instruction-only there; Windsurf/Cline stop gates untested.
-- Roadmap: `context-md lint` (verify context.md content quality), Cline SDK plugin for stop gate.
+- Feature-complete for v0.1.0 (17/17 tests, CI workflow, CHANGELOG, CONTRIBUTING, `npm pack` 8 files / 20.4 kB verified).
+- Waiting on maintainer: GitHub remote + `npm publish` (or GitHub-only release via `npx github:<user>/context-md`).
+- Optional machine-wide activation on the maintainer's machine: `context-md install --global`.
+- Known gap (documented, not hidden): opencode has no verified turn-end hook, so no stop gate there; Windsurf/Cline stop gates untested.
+- Roadmap: `context-md lint` (content quality), Cline SDK plugin for stop gate.
 
 ## Change Log
 
