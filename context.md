@@ -53,10 +53,11 @@ Zero-dependency Node CLI (`context-md`) that wires **any repository** to live `c
 
 ## Current Focus / Next Steps
 
-- Publish-ready v0.1.0 as npm package **agent-context-md** (unique name; the `context-md` CLI command is unchanged).
-- Repo moved to `C:\Users\AFZAAL KHAN\agent-context-md`; GitHub remote pending maintainer auth (token invalid: `gh auth login` needed).
-- 27/27 tests; `context-md doctor` 11/11; CI workflow; SECURITY.md threat model.
-- Waiting on maintainer: `gh auth login`, then `gh repo create BilalAjmad/agent-context-md --public --source=. --remote=origin --push`.
+- **PUBLISHED**: https://github.com/BilalAjmad/agent-context-md (public) — description "Live context.md for every AI agent.", 10 topics, homepage wired.
+- Verified from a fresh public clone: `npm test` 27/27 pass, `context-md doctor` all green, and `npx github:BilalAjmad/agent-context-md install` runs end-to-end.
+- `agent-context-md` confirmed free on npm (unique name kept; CLI command remains `context-md`).
+- Optional next steps (maintainer's call): `npm publish` (name free), `context-md install --global` on this machine, dogfooding further.
+- npm publish pending maintainer decision — would need `npm login`.
 
 ## Change Log
 
