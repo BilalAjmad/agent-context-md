@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "node \"./.context/hooks/session-start.js\"",
+        "timeout": 15
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "node \"./.context/hooks/post-tool.js\"",
+        "timeout": 15,
+        "matcher": "Write|Edit|Shell"
+      }
+    ],
+    "stop": [
+      {
+        "command": "node \"./.context/hooks/stop-check.js\" --agent=cursor",
+        "timeout": 15,
+        "loop_limit": 2
+      }
+    ]
+  }
+}

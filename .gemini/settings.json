@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "context-md",
+            "type": "command",
+            "command": "node \"$GEMINI_PROJECT_DIR/.context/hooks/session-start.js\"",
+            "timeout": 15000,
+            "description": "Refresh context.md at session start"
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "write_file|replace|edit|write_todos",
+        "hooks": [
+          {
+            "name": "context-md",
+            "type": "command",
+            "command": "node \"$GEMINI_PROJECT_DIR/.context/hooks/post-tool.js\"",
+            "timeout": 15000,
+            "description": "Log file edit into context.md"
+          }
+        ]
+      }
+    ],
+    "AfterAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "context-md",
+            "type": "command",
+            "command": "node \"$GEMINI_PROJECT_DIR/.context/hooks/stop-check.js\" --agent=gemini",
+            "timeout": 15000,
+            "description": "Block turn end until context.md is updated"
+          }
+        ]
+      }
+    ]
+  }
+}
