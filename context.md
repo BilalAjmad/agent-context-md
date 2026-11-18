@@ -49,11 +49,11 @@ Zero-dependency Node CLI (`context-md`) that wires **any repository** to live `c
 
 ## Current Focus / Next Steps
 
-- Feature-complete for v0.1.0 (22/22 tests, CI workflow, CHANGELOG, CONTRIBUTING, `npm pack` 8 files / 20.4 kB verified).
-- Read gate + strict per-prompt injection + context.md auto-create added.
-- Waiting on maintainer: GitHub remote + `npm publish` (or GitHub-only release via `npx github:<user>/context-md`).
-- Optional machine-wide activation on the maintainer's machine: `context-md install --global`.
-- Known gap (documented, not hidden): opencode has no verified turn-end hook, so no stop gate there; Windsurf/Cline stop gates untested.
+- Publish-ready v0.1.0 (23/23 tests, `context-md doctor`, PUBLISHING.md, CI workflow, `npm pack` 8 files / ~22 kB verified).
+- Live-agent verification blocked: maintainer's model account returned API 402 (insufficient credits) — hooks verified at the stdin/stdout contract level; re-run the PUBLISHING.md live check once credits exist.
+- Waiting on maintainer: GitHub remote + `npm publish` (or GitHub-only via `npx github:<user>/context-md`).
+- Optional machine-wide activation: `context-md install --global`.
+- Known gaps (documented): opencode has no verified turn-end hook (no stop gate there); Windsurf/Cline stop gates untested.
 - Roadmap: `context-md lint` (content quality), Cline SDK plugin for stop gate.
 
 ## Change Log

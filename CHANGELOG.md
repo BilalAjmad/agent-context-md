@@ -24,6 +24,9 @@ First release.
   the non-negotiable protocol into every prompt (Claude Code / Codex / Gemini CLI).
 - **Auto-create**: a missing `context.md` is recreated on the first tool call
   and at session start — fresh projects can never skip it.
+- **`context-md doctor`**: verifies context.md markers, hook files and agent
+  configs; exits non-zero on any problem.
+- **PUBLISHING.md**: maintainer release + live-verification playbook.
 - **First-run backfill**: repos wired for the first time get a one-time deep
   backfill — the agent must read README/manifests/key sources and rewrite
   `context.md` Purpose + Key Knowledge with real facts (`.context/.backfill-done`
@@ -37,6 +40,6 @@ First release.
   BOM-safe JSON merging, idempotent marked-block installs, backups before config writes.
 - Machine-independent, committable local hook commands (`${CLAUDE_PROJECT_DIR}`,
   `$GEMINI_PROJECT_DIR`, `$(git rev-parse --show-toplevel)`, `./.context/...`).
-- 17 end-to-end tests (`node --test`), GitHub Actions CI on Node 18/20/22.
+- 23 end-to-end tests (`node --test`), GitHub Actions CI on Node 18/20/22.
 - Explicit limitation notes: opencode has no verified turn-end hook; Windsurf/Cline
   stop gates untested; hooks are best-effort and never block file edits.

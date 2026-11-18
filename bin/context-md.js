@@ -21,6 +21,7 @@ Usage:
   context-md uninstall --global Remove machine-wide default wiring + runtime
   context-md uninstall --remove-context [dir]   Also delete context.md
   context-md backfill [dir]     Regenerate context.md + print the backfill protocol
+  context-md doctor [dir]       Health check: context.md markers, hook files, agent configs
   context-md refresh [dir]      Regenerate snapshot/structure sections now
   context-md verify [dir]       Exit 1 if context.md is stale vs git changes (for CI)
   context-md status [dir]       Print install status for this repo
@@ -126,6 +127,38 @@ switch (command) {
     console.log('3. Rewrite context.md Purpose and Key Knowledge with the REAL project purpose, stack decisions, conventions and gotchas. No placeholders.');
     console.log('4. Create an empty file .context/.backfill-done (mkdir -p .context first if needed).');
     console.log('5. context.md refreshed at:', contextPath(root));
+    break;
+  }
+  case 'doctor': {
+    const root = resolveTarget(args);
+    const results = [];
+    const check = (label, ok, info = '') => results.push({ label, ok, info });
+    const ctx = contextPath(root);
+    const ctxExists = fs.existsSync(ctx);
+    check('context.md exists', ctxExists);
+    if (ctxExists) {
+      const body = fs.readFileSync(ctx, 'utf8');
+      const markers = ['context-md:snapshot:start', 'context-md:structure:start', 'context-md:log:start', 'context-md:snapshot:end'];
+      const missing = markers.filter((m) => !body.includes(m));
+      check('context.md markers intact', missing.length === 0, missing.length ? `missing: ${missing.join(',')}` : '');
+    }
+    for (const rel of ['.context/hooks/session-start.js', '.context/hooks/post-tool.js', '.context/hooks/read-gate.js', '.context/hooks/prompt-gate.js', '.context/hooks/stop-check.js']) {
+      check(rel, fs.existsSync(path.join(root, rel)));
+    }
+    for (const rel of ['.claude/settings.json', '.codex/hooks.json', '.gemini/settings.json', '.cursor/hooks.json']) {
+      const file = path.join(root, rel);
+      if (!fs.existsSync(file)) { results.push({ label: rel, ok: true, info: 'not wired (ok if global mode or intentional)' }); continue; }
+      const data = readJsonFile(file);
+      const holds = data !== null && (JSON.stringify(data).includes('.context/hooks/') || JSON.stringify(data).includes('.context-md/hooks/'));
+      check(`${rel} parses + carries context-md hooks`, data !== null && holds, data === null ? 'invalid JSON' : '');
+    }
+    let failed = 0;
+    for (const r of results) {
+      console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.label}${r.info ? `  — ${r.info}` : ''}`);
+      if (!r.ok) failed++;
+    }
+    console.log(failed ? `\n${failed} problem(s) found — run \`context-md refresh\` or reinstall.` : '\nAll checks passed.');
+    process.exit(failed ? 1 : 0);
     break;
   }
   case 'refresh': {

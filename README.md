@@ -102,6 +102,7 @@ context-md uninstall --remove-context [dir]   also delete context.md
 context-md backfill [dir]         regenerate context.md + print the backfill protocol
 context-md refresh [dir]          regenerate auto-managed sections now
 context-md verify [dir]           CI check: exits 1 if context.md is stale
+context-md doctor [dir]           health check: markers, hook files, agent configs
 context-md status [dir]           show what is wired in this repo
 ```
 
@@ -220,8 +221,11 @@ context-md uninstall --remove-context
 
 ## Development
 
+See [PUBLISHING.md](PUBLISHING.md) for the maintainer release flow and a live-
+verification playbook (requires a working model account in the agent being tested).
+
 ```bash
-npm test          # node --test — 17 end-to-end tests incl. global mode, stop-gate + Windows BOM merge cases
+npm test          # node --test — 23 end-to-end tests
 ```
 
 Layout: `bin/context-md.js` (CLI) · `src/scan.js` (repo scan/detect) ·

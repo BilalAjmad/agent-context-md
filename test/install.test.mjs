@@ -273,6 +273,20 @@ test('session-start resets the read gate', () => {
   assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).contextRead, false);
 });
 
+test('doctor reports a healthy wired repo and fails on broken config', () => {
+  const ok = run(['doctor', fixture]);
+  assert.match(ok, /All checks passed\./);
+  // Corrupt the gemini config — doctor must fail
+  fs.writeFileSync(path.join(fixture, '.gemini', 'settings.json'), '{not valid json');
+  let code = 0;
+  try {
+    run(['doctor', fixture]);
+  } catch (err) {
+    code = err.status;
+  }
+  assert.equal(code, 1);
+});
+
 test('prompt gate injects the strict protocol into every prompt', () => {
   const promptGate = path.join(fixture, '.context', 'hooks', 'prompt-gate.js');
   for (const agent of ['claude', 'codex']) {
