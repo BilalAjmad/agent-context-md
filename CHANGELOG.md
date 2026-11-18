@@ -20,6 +20,10 @@ First release.
   `context.md` was updated after the last edit.
 - **Read gate**: pre-tool hook hard-denies file edits until `context.md` has
   been read this session (Claude Code / Codex / Gemini CLI / Cursor).
+- **Strict prompt injection**: `UserPromptSubmit` / `BeforeAgent` hook injects
+  the non-negotiable protocol into every prompt (Claude Code / Codex / Gemini CLI).
+- **Auto-create**: a missing `context.md` is recreated on the first tool call
+  and at session start — fresh projects can never skip it.
 - **First-run backfill**: repos wired for the first time get a one-time deep
   backfill — the agent must read README/manifests/key sources and rewrite
   `context.md` Purpose + Key Knowledge with real facts (`.context/.backfill-done`

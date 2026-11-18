@@ -46,6 +46,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.context/hooks/prompt-gate.js\" --agent=claude",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

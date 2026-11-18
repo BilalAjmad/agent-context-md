@@ -55,6 +55,20 @@
           }
         ]
       }
+    ],
+    "BeforeAgent": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "name": "context-md",
+            "type": "command",
+            "command": "node \"$GEMINI_PROJECT_DIR/.context/hooks/prompt-gate.js\" --agent=gemini",
+            "timeout": 10000,
+            "description": "Inject the non-negotiable context protocol into every prompt"
+          }
+        ]
+      }
     ]
   }
 }

@@ -273,6 +273,29 @@ test('session-start resets the read gate', () => {
   assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).contextRead, false);
 });
 
+test('prompt gate injects the strict protocol into every prompt', () => {
+  const promptGate = path.join(fixture, '.context', 'hooks', 'prompt-gate.js');
+  for (const agent of ['claude', 'codex']) {
+    const out = execFileSync(process.execPath, [promptGate, `--agent=${agent}`], { cwd: fixture, input: '{}', encoding: 'utf8' });
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+    assert.match(parsed.hookSpecificOutput.additionalContext, /STRICT/);
+  }
+  const outGemini = execFileSync(process.execPath, [promptGate, '--agent=gemini'], { cwd: fixture, input: '{}', encoding: 'utf8' });
+  assert.equal(JSON.parse(outGemini).hookSpecificOutput.hookEventName, 'BeforeAgent');
+});
+
+test('read gate recreates a missing context.md before any work', () => {
+  const readGate = path.join(fixture, '.context', 'hooks', 'read-gate.js');
+  const statePath = path.join(fixture, '.context', 'session-state.json');
+  const ctxFile = path.join(fixture, 'context.md');
+  fs.rmSync(ctxFile, { force: true });
+  fs.writeFileSync(statePath, JSON.stringify({ edits: 0, pendingEdit: false, lastEdit: null, backfillPending: false, contextRead: false }));
+  const out = execFileSync(process.execPath, [readGate, '--agent=claude'], { cwd: fixture, input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'src/index.js' } }), encoding: 'utf8' });
+  assert.equal(JSON.parse(out).hookSpecificOutput.permissionDecision, 'deny');
+  assert.ok(fs.existsSync(ctxFile), 'context.md must be recreated automatically');
+});
+
 test('uninstall removes blocks and hooks but keeps context.md', () => {
   const out = run(['uninstall', fixture]);
   assert.match(out, /kept/);

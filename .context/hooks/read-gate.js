@@ -29,6 +29,12 @@ if (HOOK_IS_GLOBAL && fs.existsSync(path.join(root, '.context', 'lib', 'context-
   process.exit(0);
 }
 
+// context.md is auto-created on the first tool call even if session-start was skipped.
+const contextFile = path.join(root, 'context.md');
+if (!fs.existsSync(contextFile)) {
+  try { lib.ensureContextFile(root); } catch { try { fs.writeFileSync(contextFile, '# context.md', 'utf8'); } catch {} }
+}
+
 const toolName = String(input.tool_name ?? input.tool ?? input.name ?? '');
 const toolInput = input.tool_input ?? input.arguments ?? input.toolInput ?? input;
 const serialized = JSON.stringify(toolInput ?? input ?? {});

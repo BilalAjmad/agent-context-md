@@ -83,6 +83,12 @@ activates in project-like folders (containing `.git` or a known manifest) and
 Set it up once; never think about it again. Remove it with
 `context-md uninstall --global`.
 
+Either way, a fresh project can never start work without `context.md`: it is
+created automatically on the very first tool call (SessionStart hook, or the
+read gate recreating it if hooks were skipped), and the read gate blocks any
+file edit until the agent has actually read it. Existing projects get the
+one-time backfill on their next session.
+
 Both modes coexist: team repos use Option A (committable), everything else rides on Option B.
 
 Other commands:
@@ -109,15 +115,18 @@ idempotent: re-running install refreshes in place, never duplicates.
 No tool can force an LLM to retain every thought — but it can make drift
 structurally impossible to ignore. **context-md enforces the discipline with five layers**:
 
-1. **SessionStart injection** — every agent session begins with
-   `context.md: read this first` injected into context (Claude Code, Codex,
-   Gemini CLI via hook-specific output; plain-text for Codex; instruction files
-   for the rest).
+1. **SessionStart injection + per-prompt strict rule** — every session begins
+   with `context.md: read this first` injected into context, and **every user
+   prompt** adds the non-negotiable protocol via `UserPromptSubmit` /
+   `BeforeAgent` (Claude Code, Codex, Gemini CLI): read context.md first,
+   update it with every decision/change, never finish with it stale — no
+   compromise.
 2. **Read gate (PreToolUse)** — the agent’s **file edits are hard-blocked**
    until something in this session has read `context.md` (any Read/Grep/Shell
    command carrying the filename clears the gate). Claude Code / Codex deny via
    `permissionDecision`, Gemini via `BeforeTool` deny, Cursor via `preToolUse`
-   `permission: deny`. The agent physically cannot edit without reading first.
+   `permission: deny`. Missing `context.md` is recreated automatically on the
+   first tool call — a fresh project can never start work without it.
 3. **Per-edit hooks** — every file edit the agent makes is appended to the
    Change Log synchronously (`- 2026-11-18T10:00:00Z edited src/index.ts`), and
    a per-session tracker records that files changed.
@@ -189,6 +198,10 @@ identical.
   *decision* it never wrote down and the stop gate never saw (e.g. a pure
   reasoning step with zero file edits — nothing stops the turn). That bound is
   physics, not tooling: only the agent itself can write its own thoughts down.
+- **Strict per-prompt injection** only exists where the prompt hook can inject
+  context (Claude Code / Codex `UserPromptSubmit`, Gemini `BeforeAgent`). Cursor's
+  `beforeSubmitPrompt` only allows/blocks, so Cursor gets the session start + read
+  gate + stop gate but no per-turn reminder.
 - Post-edit logging records **that** a file changed and **when** — the
   *reasoning* still lives in the agent’s “Current Focus / Key Knowledge”
   updates, which rely on the agent following the protocol.
