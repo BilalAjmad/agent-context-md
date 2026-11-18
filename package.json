@@ -1,0 +1,32 @@
+{
+  "name": "context-md",
+  "version": "0.1.0",
+  "description": "Live context.md for every AI agent — one file, kept real-time by hooks, zero context loss",
+  "type": "module",
+  "bin": {
+    "context-md": "bin/context-md.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai-agents",
+    "context-engineering",
+    "claude-code",
+    "codex",
+    "cursor",
+    "opencode",
+    "gemini-cli",
+    "copilot",
+    "memory",
+    "context.md"
+  ],
+  "license": "MIT"
+}
