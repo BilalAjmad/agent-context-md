@@ -2,26 +2,25 @@
 
 **Live `context.md` for AI agents.**
 
-## TL;DR
+## What it is / how it works
 
-**What it is:** one file — `context.md` — holding everything your project is and
-everything that happens in it. Every AI agent you use reads it first.
-
-**How it works:** install once → your agents are wired with hooks that (1)
-inject the protocol each session, (2) **force the agent to read `context.md`
-before it can edit any file**, (3) append **every file edit** to the Change Log
-in real time, (4) **block ending the turn/session until `context.md` is
-updated**, (5) fail CI if it goes stale. Plain local hooks — no API keys, no
-server, free.
-
-**What's inside:** the `context.md` file + 5 hook agents (Claude Code, Codex,
-Gemini CLI, Cursor, opencode) + instruction files for 20+ agents (Copilot,
-Windsurf, Devin, Continue, Junie, Amazon Q, Cline, Roo, Kilo, Augment, Tabnine,
-Zed, Aider…) + interactive installer + `context-md doctor` health check +
-`context-md verify` CI gate + first-run backfill for existing repos +
-clean uninstall.
-
-## What this does
+Your repository carries one live file — **`context.md`** — containing the
+complete, always-current description of your project: what it is, how it is
+built, the decisions already made, the current focus, and a timestamped change
+log of everything that happened in it. Install it once (`npx agent-context-md
+install`) and every AI agent you use reads that file first. From then on,
+every hook-capable agent (Claude Code, Codex, Gemini CLI, Cursor; opencode via
+a plugin) is wired with five local mechanisms: **(1)** on session start the
+hook refreshes `context.md` and injects "MANDATORY: read this first" into the
+agent, **(2)** the agent cannot edit any file until it has read `context.md`
+this session (the edit tool is hard-denied), **(3)** every file edit is
+appended to the change log in real time, **(4)** ending the turn/session is
+blocked while an edit was made without `context.md` being updated, and **(5)**
+CI can fail on stale context (`context-md verify`). Instruction files cover
+20+ agents (Copilot, Windsurf, Devin, Continue, Junie, Amazon Q, Cline, Roo,
+Kilo, Augment, Tabnine, Zed, Aider…), all hooks run locally with **no API
+keys, no server, no telemetry** — and you get the whole thing out of the box
+by installing once.
 
 ## The problem
 
